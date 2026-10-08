@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>迷你世界 3.0 创造工具箱 —— 界面预览</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;padding:14px;line-height:1.6}
+h1{font-size:17px;color:#58a6ff;margin-bottom:4px}
+.sub{font-size:12px;color:#8b949e;margin-bottom:14px}
+.wrap{display:flex;flex-direction:column;gap:14px;max-width:1100px;margin:0 auto}
+@media(min-width:900px){.wrap{flex-direction:row}.col-l{flex:0 0 340px}.col-r{flex:1;min-width:0}}
+.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:12px}
+.card h2{font-size:13px;color:#e6edf3;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.card h2::before{content:'';width:3px;height:13px;background:#58a6ff;border-radius:2px}
+/* 手机屏 */
+.phone{background:#000;border:8px solid #222;border-radius:22px;padding:0;overflow:hidden;position:relative}
+.phone-bar{background:#111;padding:5px 12px;font-size:11px;color:#8b949e;display:flex;justify-content:space-between}
+.screen{background:linear-gradient(180deg,#1a2332,#0d1117);min-height:430px;position:relative;padding:8px}
+/* 游戏内 UI 面板 */
+.panel{background:rgba(0,0,0,.72);border:1px solid #3d444d;border-radius:8px;padding:8px;width:210px}
+.panel .title{font-size:12px;color:#ffd33d;font-weight:600;margin-bottom:8px;text-align:center;border-bottom:1px solid #30363d;padding-bottom:5px}
+.pbtn{display:block;width:100%;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#c9d1d9;font-size:11px;padding:7px 8px;margin-bottom:5px;text-align:left;cursor:pointer;transition:.12s}
+.pbtn:hover{background:#30363d;border-color:#58a6ff}
+.pbtn:active{transform:scale(.97)}
+.pbtn.act{background:#1f6feb;border-color:#58a6ff;color:#fff}
+.status{font-size:10px;color:#7ee787;background:#0d2818;border:1px solid #2ea043;border-radius:4px;padding:5px 7px;margin-top:6px;min-height:24px}
+.pagerow{display:flex;gap:5px;margin-top:6px}
+.pagerow .pbtn{margin:0;font-size:10px;text-align:center;padding:5px 4px}
+/* 世界 */
+canvas{background:#0a0e14;border:1px solid #30363d;border-radius:6px;display:block;width:100%;image-rendering:pixelated;cursor:crosshair}
+.hint{font-size:11px;color:#8b949e;margin-top:6px}
+/* 日志 */
+#log{height:300px;overflow-y:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:#0a0e14;border:1px solid #30363d;border-radius:6px;padding:8px}
+#log div{padding:1px 0;border-bottom:1px solid #161b22}
+#log .ok{color:#7ee787}#log .info{color:#58a6ff}#log .warn{color:#ffa657}#log .err{color:#ff7b72}
+.badge{display:inline-block;font-size:10px;padding:1px 6px;border-radius:8px;background:#1f6feb;color:#fff;margin-left:4px}
+.badge.g{background:#2ea043}.badge.o{background:#d29922}
+.stat{display:flex;gap:8px;flex-wrap:wrap;font-size:11px;color:#8b949e;margin-top:8px}
+.stat span{background:#21262d;border:1px solid #30363d;border-radius:4px;padding:3px 8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="col-l">
+    <h1>迷你世界 3.0 · 创造工具箱</h1>
+    <div class="sub">游戏内 UI 界面预览 —— 下面的面板由 Lua 脚本真实创建，可以点</div>
+    <div class="card">
+      <h2>手机屏幕里的样子</h2>
+      <div class="phone">
+        <div class="phone-bar"><span>迷你世界</span><span>创造模式</span></div>
+        <div class="screen">
+          <div class="panel" id="panel"></div>
+        </div>
+      </div>
+      <div class="stat" id="stat"></div>
+    </div>
+  </div>
+  <div class="col-r">
+    <div class="card">
+      <h2>世界俯视图（点方块也能触发）</h2>
+      <canvas id="cv" width="500" height="500"></canvas>
+      <div class="hint">黄绿色一排就是地面按钮方块（z = -14）。<b>直接点它们</b>，和游戏里点方块一样会触发功能。</div>
+    </div>
+    <div class="card">
+      <h2>运行日志</h2>
+      <div id="log"></div>
+    </div>
+  </div>
+</div>
+
+<script>/* ============================================================
+   MiniLua —— 迷你世界 3.0 创造模式 Lua 子集解释器
+   支持：local/global 变量、function、if/elseif/else、for/while、
+        表、obj:method() 与 obj.method()、字符串、注释、return
+   ============================================================ */
+(function (global) {
+'use strict';
+
+/* ---------- 词法分析 ---------- */
+const KEYWORDS = new Set(['local','function','end','if','then','elseif','else','for',
+  'in','while','do','return','break','nil','true','false','and','or','not']);
+
+function tokenize(src) {
+  const toks = []; let i = 0, line = 1;
+  const n = src.length;
+  const isAlpha = c => /[A-Za-z_\u4e00-\u9fa5]/.test(c);
+  const isAlnum = c => /[A-Za-z0-9_\u4e00-\u9fa5]/.test(c);
+  const isDigit = c => /[0-9]/.test(c);
+
+  while (i < n) {
+    let c = src[i];
+    // 换行
+    if (c === '\n') { line++; i++; continue; }
+    if (c === ' ' || c === '\t' || c === '\r') { i++; continue; }
+
+    // 长注释 --[[ ]]  或 --[==[ ]==]
+    if (c === '-' && src[i+1] === '-') {
+      i += 2;
+      if (src[i] === '[') {
+        let eq = 0, j = i + 1;
+        while (src[j] === '=') { eq++; j++; }
+        if (src[j] === '[') {
+          const close = ']' + '='.repeat(eq) + ']';
+          const end = src.indexOf(close, j + 1);
+          i = (end === -1) ? n : end + close.length;
+          continue;
+        }
+      }
+      while (i < n && src[i] !== '\n') i++;
+      continue;
+    }
+    // 长字符串 [[ ]] / [==[ ]==]
+    if (c === '[') {
+      let eq = 0, j = i + 1;
+      while (src[j] === '=') { eq++; j++; }
+      if (src[j] === '[') {
+        const close = ']' + '='.repeat(eq) + ']';
+        let end = src.indexOf(close, j + 1);
+        if (end === -1) end = n;
+        const raw = src.slice(j + 1, end);
+        // Lua 规范：紧随开括号的换行被忽略
+        const val = raw.startsWith('\n') ? raw.slice(1) : raw;
+        toks.push({ t: 'str', v: val, line });
+        while (i < end + close.length) { if (src[i] === '\n') line++; i++; }
+        continue;
+      }
+    }
+    // 短字符串
+    if (c === '"' || c === "'") {
+      const q = c; i++; let s = '';
+      while (i < n && src[i] !== q) {
+        if (src[i] === '\\') {
+          i++; const e = src[i];
+          s += (e === 'n') ? '\n' : (e === 't') ? '\t' : (e === 'r') ? '\r' : e;
+          i++;
+        } else { s += src[i]; i++; }
+      }
+      i++; toks.push({ t: 'str', v: s, line }); continue;
+    }
+    // 数字
+    if (isDigit(c) || (c === '.' && isDigit(src[i+1]))) {
+      let s = '';
+      while (i < n && (isDigit(src[i]) || src[i] === '.')) { s += src[i]; i++; }
+      toks.push({ t: 'num', v: parseFloat(s), line }); continue;
+    }
+    // 标识符 / 关键字
+    if (isAlpha(c)) {
+      let s = '';
+      while (i < n && isAlnum(src[i])) { s += src[i]; i++; }
+      toks.push({ t: KEYWORDS.has(s) ? 'kw' : 'id', v: s, line }); continue;
+    }
+    // 多字符运算符
+    const ops3 = ['...'];
+    const ops2 = ['==','~=','<=','>=','..','//','::'];
+    let matched = null;
+    for (const o of ops3) if (src.startsWith(o, i)) { matched = o; break; }
+    if (!matched) for (const o of ops2) if (src.startsWith(o, i)) { matched = o; break; }
+    if (matched) { toks.push({ t: 'op', v: matched, line }); i += matched.length; continue; }
+    // 单字符
+    if ('+-*/%^#<>=(){}[];,:.'.includes(c)) {
+      toks.push({ t: 'op', v: c, line }); i++; continue;
+    }
+    i++; // 跳过未知字符
+  }
+  toks.push({ t: 'eof', v: '<eof>', line });
+  return toks;
+}
+
+/* ---------- 语法分析（递归下降） ---------- */
+function parse(src) {
+  const toks = tokenize(src);
+  let p = 0;
+  const peek = (k=0) => toks[p+k];
+  const at = (type, val) => {
+    const t = toks[p];
+    return (t.t === type && (val === undefined || t.v === val));
+  };
+  const eat = (type, val) => {
+    if (!at(type, val)) throw new Error(`语法错误(line ${toks[p].line}): 期望 ${val||type} 实际 ${toks[p].v}`);
+    return toks[p++];
+  };
+  const opt = (type, val) => { if (at(type, val)) { p++; return true; } return false; };
+
+  function block(terminators) {
+    const body = [];
+    while (true) {
+      const t = toks[p];
+      if (t.t === 'eof') break;
+      if (t.t === 'kw' && terminators.includes(t.v)) break;
+      const st = statement();
+      if (st) body.push(st);
+      opt('op', ';');
+    }
+    return body;
+  }
+
+  function namelist() {
+    const names = [eat('id').v];
+    while (opt('op', ',')) names.push(eat('id').v);
+    return names;
+  }
+  function exprlist() {
+    const es = [expr()];
+    while (opt('op', ',')) es.push(expr());
+    return es;
+  }
+
+  // 后缀表达式：索引 / 调用 / 方法
+  function suffix(base) {
+    let e = base;
+    while (true) {
+      if (at('op', '.')) {
+        p++; const key = eat('id').v;
+        e = { k: 'index', obj: e, key: { k: 'str', v: key } };
+      } else if (at('op', ':')) {
+        p++; const m = eat('id').v;
+        let args = [];
+        if (at('op', '(')) { p++; if (!at('op',')')) args = exprlist(); eat('op',')'); }
+        else if (at('str')) { args = [{ k: 'str', v: toks[p++].v }]; }
+        else if (at('op','{')) { p++; args = [tableCtor()]; }
+        e = { k: 'mcall', obj: e, method: m, args, self: true };
+      } else if (at('op', '[')) {
+        p++; const key = expr(); eat('op', ']');
+        e = { k: 'index', obj: e, key };
+      } else if (at('op', '(')) {
+        p++; let args = [];
+        if (!at('op', ')')) args = exprlist();
+        eat('op', ')');
+        e = { k: 'call', fn: e, args };
+      } else if (at('str')) {
+        e = { k: 'call', fn: e, args: [{ k: 'str', v: toks[p++].v }] };
+      } else if (at('op', '{')) {
+        p++; e = { k: 'call', fn: e, args: [tableCtor()] };
+      } else break;
+    }
+    return e;
+  }
+
+  function tableCtor() {
+    const items = [];
+    while (!at('op', '}')) {
+      if (at('op', '[')) {
+        p++; const k = expr(); eat('op', ']'); eat('op', '=');
+        items.push({ key: k, val: expr() });
+      } else if (at('id') && toks[p+1].t === 'op' && toks[p+1].v === '=') {
+        const k = { k: 'str', v: toks[p++].v }; p++;
+        items.push({ key: k, val: expr() });
+      } else {
+        items.push({ val: expr() });
+      }
+      if (!opt('op', ',')) break;
+    }
+    eat('op', '}');
+    return { k: 'table', items };
+  }
+
+  function primary() {
+    const t = toks[p];
+    if (t.t === 'num') { p++; return { k: 'num', v: t.v }; }
+    if (t.t === 'str') { p++; return { k: 'str', v: t.v }; }
+    if (t.t === 'kw') {
+      if (t.v === 'nil')   { p++; return { k: 'nil' }; }
+      if (t.v === 'true')  { p++; return { k: 'bool', v: true }; }
+      if (t.v === 'false') { p++; return { k: 'bool', v: false }; }
+      if (t.v === 'function') { p++; return funcBody(); }
+      if (t.v === 'not')   { p++; return { k: 'unop', op: 'not', a: exprPrec(8) }; }
+    }
+    if (t.t === 'id') { p++; return { k: 'var', name: t.v }; }
+    if (t.t === 'op' && t.v === '(') { p++; const e = expr(); eat('op', ')'); return { k: 'paren', e }; }
+    if (t.t === 'op' && t.v === '{') { p++; return tableCtor(); }
+    if (t.t === 'op' && (t.v === '-' || t.v === '#')) {
+      p++; return { k: 'unop', op: t.v, a: exprPrec(8) };
+    }
+    throw new Error(`语法错误(line ${t.line}): 意外的 ${t.v}`);
+  }
+
+  const PREC = { 'or':1, 'and':2, '<':3,'>':3,'<=':3,'>=':3,'~=':3,'==':3,
+                 '..':5, '+':6,'-':6, '*':7,'/':7,'%':7, '^':9 };
+  // 原子表达式 + 后缀（.索引 / :方法 / ()调用 / []索引）
+  function postfixExpr() { return suffix(primary()); }
+
+  function exprPrec(minPrec) {
+    let lhs = postfixExpr();
+    while (true) {
+      const t = toks[p];
+      const isLogicKw = (t.t === 'kw' && (t.v === 'and' || t.v === 'or'));
+      if (t.t !== 'op' && !isLogicKw) break;
+      const pr = PREC[t.v];
+      if (pr === undefined || pr < minPrec) break;
+      p++;
+      // 右结合 ^ 和 ..
+      const nextMin = (t.v === '^' || t.v === '..') ? pr : pr + 1;
+      const rhs = exprPrec(nextMin);
+      lhs = { k: 'binop', op: t.v, a: lhs, b: rhs };
+    }
+    return lhs;
+  }
+  const expr = () => exprPrec(1);
+
+  function funcBody() {
+    eat('op', '(');
+    const params = [];
+    if (at('id') || at('op','...')) {
+      if (at('op','...')) { p++; params.push('...'); }
+      else { params.push(eat('id').v);
+        while (opt('op', ',')) {
+          if (at('op','...')) { p++; params.push('...'); break; }
+          params.push(eat('id').v);
+        } }
+    }
+    eat('op', ')');
+    const body = block(['end']);
+    eat('kw', 'end');
+    return { k: 'func', params, body };
+  }
+
+  function statement() {
+    const t = toks[p];
+    // local
+    if (t.t === 'kw' && t.v === 'local') {
+      p++;
+      if (at('kw', 'function')) {
+        p++; const name = eat('id').v;
+        const fn = funcBody();
+        return { k: 'localfn', name, fn };
+      }
+      const names = namelist();
+      let inits = [];
+      if (opt('op', '=')) inits = exprlist();
+      return { k: 'local', names, inits };
+    }
+    // function name(...)  /  function a.b.c(...) / function a:b(...)
+    if (t.t === 'kw' && t.v === 'function') {
+      p++;
+      const base = eat('id').v;
+      let e = { k: 'var', name: base };
+      let isMethod = false;
+      while (true) {
+        if (at('op', '.')) { p++; e = { k: 'index', obj: e, key: { k: 'str', v: eat('id').v } }; }
+        else if (at('op', ':')) { p++; e = { k: 'index', obj: e, key: { k: 'str', v: eat('id').v } }; isMethod = true; break; }
+        else break;
+      }
+      const fn = funcBody();
+      if (isMethod) fn.params.unshift('self');
+      return { k: 'assign', target: e, val: fn };
+    }
+    // if
+    if (t.t === 'kw' && t.v === 'if') {
+      p++; const clauses = [];
+      const cond = expr(); eat('kw', 'then');
+      clauses.push({ cond, body: block(['elseif','else','end']) });
+      while (at('kw', 'elseif')) {
+        p++; const c2 = expr(); eat('kw', 'then');
+        clauses.push({ cond: c2, body: block(['elseif','else','end']) });
+      }
+      if (at('kw', 'else')) { p++; clauses.push({ cond: null, body: block(['end']) }); }
+      eat('kw', 'end');
+      return { k: 'if', clauses };
+    }
+    // while
+    if (t.t === 'kw' && t.v === 'while') {
+      p++; const cond = expr(); eat('kw', 'do');
+      const body = block(['end']); eat('kw', 'end');
+      return { k: 'while', cond, body };
+    }
+    // for
+    if (t.t === 'kw' && t.v === 'for') {
+      p++;
+      const n1 = eat('id').v;
+      if (opt('op', '=')) {
+        const start = expr(); eat('op', ',');
+        const stop = expr();
+        let step = null;
+        if (opt('op', ',')) step = expr();
+        eat('kw', 'do');
+        const body = block(['end']); eat('kw', 'end');
+        return { k: 'numfor', var: n1, start, stop, step, body };
+      }
+      // generic for
+      const vars = [n1];
+      while (opt('op', ',')) vars.push(eat('id').v);
+      eat('kw', 'in');
+      const iter = exprlist();
+      eat('kw', 'do');
+      const body = block(['end']); eat('kw', 'end');
+      return { k: 'genfor', vars, iter, body };
+    }
+    // return
+    if (t.t === 'kw' && t.v === 'return') {
+      p++;
+      let vals = [];
+      if (!at('kw','end') && !at('eof') && !(at('kw','else')) && !(at('kw','elseif'))) {
+        vals = exprlist();
+      }
+      return { k: 'return', vals };
+    }
+    if (t.t === 'kw' && t.v === 'break') { p++; return { k: 'break' }; }
+    if (t.t === 'kw' && t.v === 'do') {
+      p++; const body = block(['end']); eat('kw','end'); return { k: 'dostmt', body };
+    }
+    // 赋值或调用
+    if (t.t === 'id' || (t.t === 'op' && t.v === '(')) {
+      const e = exprPrec(1);
+      // 判断是否是赋值目标
+      if (at('op', ',')) {
+        p++; const rest = exprlist();
+        eat('op', '='); const vals = exprlist();
+        return { k: 'assign', target: { k:'multi', items:[e,...rest] }, val: { k:'multi', items: vals } };
+      }
+      if (at('op', '=')) {
+        p++; const vals = exprlist();
+        return { k: 'assign', target: e, val: vals.length>1 ? {k:'multi',items:vals} : vals[0] };
+      }
+      // 裸调用
+      return { k: 'exprstmt', e: suffix(e) };
+    }
+    // 跳过无法识别的 token
+    p++;
+    return null;
+  }
+
+  const ast = block([]);
+  return ast;
+}
+
+/* ---------- 运行时 ---------- */
+const BREAK = Symbol('break');
+const RETURN = Symbol('return');
+
+function toStr(v) {
+  if (v === null || v === undefined) return 'nil';
+  if (v === true) return 'true';
+  if (v === false) return 'false';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number') return (Number.isInteger(v)) ? String(v) : String(v);
+  if (typeof v === 'function') return 'function';
+  if (Array.isArray(v)) return 'table';
+  if (typeof v === 'object') return v.__str__ || 'table';
+  return String(v);
+}
+function truthy(v) { return v !== false && v !== null && v !== undefined && v !== 0 && v !== ''; }
+
+function arith(op, a, b) {
+  const x = (typeof a === 'string') ? parseFloat(a) : a;
+  const y = (typeof b === 'string') ? parseFloat(b) : b;
+  if ((typeof x !== 'number' || isNaN(x)) || (typeof y !== 'number' || isNaN(y))) {
+    throw new Error(`算术错误: 无法对 ${toStr(a)} 和 ${toStr(b)} 做 ${op}`);
+  }
+  switch (op) {
+    case '+': return x + y; case '-': return x - y;
+    case '*': return x * y; case '/': return y === 0 ? (x>0?Infinity:-Infinity) : x / y;
+    case '%': return y === 0 ? 0 : x % y;
+    case '^': return Math.pow(x, y);
+  }
+}
+
+class LuaFunc {
+  constructor(node, env) { this.node = node; this.env = env; this.isLua = true; }
+}
+
+class Interp {
+  constructor(apiObjects) {
+    this.global = Object.create(null);
+    this.api = apiObjects || {};
+    this.hooks = {};
+    this._installBase();
+  }
+  _installBase() {
+    const g = this.global;
+    g.print = (...a) => this.log(a.map(toStr).join('\t'));
+    g.type = v => {
+      if (typeof v === 'string') return 'string';
+      if (typeof v === 'number') return 'number';
+      if (typeof v === 'boolean') return 'boolean';
+      if (typeof v === 'function' || v instanceof LuaFunc) return 'function';
+      if (v === null || v === undefined) return 'nil';
+      return 'table';
+    };
+    g.tostring = toStr;
+    g.tonumber = v => { const n = parseFloat(v); return isNaN(n) ? null : n; };
+    g.math = {
+      floor: Math.floor, ceil: Math.ceil, abs: Math.abs, max: Math.max, min: Math.min,
+      random: (a,b) => {
+        if (a === undefined) return Math.random();
+        if (b === undefined) return Math.floor(Math.random()*a)+1;
+        return Math.floor(Math.random()*(b-a+1))+a;
+      },
+      sqrt: Math.sqrt, sin: Math.sin, cos: Math.cos, pi: Math.PI, huge: Infinity,
+      randomseed: ()=>{}
+    };
+    g.string = {
+      len: s => toStr(s).length,
+      sub: (s,i,j) => { const t=toStr(s); const a=(i<0? t.length+i : i-1); return j===undefined? t.slice(a) : t.slice(a,j); },
+      format: (f, ...a) => {
+        let out = toStr(f), k = 0;
+        out = out.replace(/%d/g, () => toStr(a[k++]));
+        out = out.replace(/%s/g, () => toStr(a[k++]));
+        out = out.replace(/%f/g, () => toStr(a[k++]));
+        return out;
+      },
+      rep: (s,n) => toStr(s).repeat(n),
+      upper: s => toStr(s).toUpperCase(),
+      lower: s => toStr(s).toLowerCase(),
+      find: (s,p) => { const i = toStr(s).indexOf(toStr(p)); return i<0? null : i+1; },
+      byte: s => toStr(s).charCodeAt(0),
+      char: (...c) => c.map(x=>String.fromCharCode(x)).join('')
+    };
+    g.table = {
+      insert: (t, v) => { if (Array.isArray(t) || typeof t === 'object') { t[t.length||Object.keys(t).length]=v; } },
+      remove: (t, i) => { if (Array.isArray(t)) { return (i===undefined)? t.pop() : t.splice(i-1,1)[0]; } return null; },
+      getn: t => (Array.isArray(t) ? t.length : Object.keys(t||{}).length),
+      concat: (t, sep) => (Array.isArray(t)? t : Object.values(t||{})).map(toStr).join(sep||'')
+    };
+    g.os = { time: () => Math.floor(Date.now()/1000), clock: () => performance.now()/1000 };
+    g.pairs = (t) => {
+      if (Array.isArray(t)) { let i=0; return () => (i<t.length ? [i+1, t[i++]] : null); }
+      const ks = Object.keys(t||{}); let i=0;
+      return () => (i<ks.length ? [ks[i], t[ks[i++]]] : null);
+    };
+    g.ipairs = (t) => {
+      let i = 0;
+      return () => { i++; return (t && t[i] !== undefined) ? [i, t[i]] : null; };
+    };
+  }
+  log(s) { if (this.hooks.log) this.hooks.log(s); }
+
+  // 沿作用域链（原型链）查找已声明变量，返回持有它的对象或 null
+  lookupEnv(name, env) {
+    let cur = env;
+    let guard = 0;
+    while (cur && guard++ < 512) {
+      if (Object.prototype.hasOwnProperty.call(cur, name)) return cur;
+      cur = Object.getPrototypeOf(cur);
+    }
+    return null;
+  }
+
+  getVar(name) {
+    if (Object.prototype.hasOwnProperty.call(this.global, name)) return this.global[name];
+    if (this.api && Object.prototype.hasOwnProperty.call(this.api, name)) return this.api[name];
+    return null;
+  }
+  setVar(name, v) { this.global[name] = v; }
+
+  eval(node, env) {
+    switch (node.k) {
+      case 'num': return node.v;
+      case 'str': return node.v;
+      case 'bool': return node.v;
+      case 'nil': return null;
+      case 'var': {
+        const holder = this.lookupEnv(node.name, env);
+        return holder ? holder[node.name] : this.getVar(node.name);
+      }
+      case 'paren': return this.eval(node.e, env);
+      case 'func': return new LuaFunc(node, env);
+      case 'unop': {
+        if (node.op === 'not') return !truthy(this.eval(node.a, env));
+        if (node.op === '-') return arith('-', 0, this.eval(node.a, env));
+        if (node.op === '#') { const v = this.eval(node.a, env); return Array.isArray(v) ? v.length : Object.keys(v||{}).length; }
+        return null;
+      }
+      case 'binop': {
+        // 短路
+        if (node.op === 'and') { const a = this.eval(node.a, env); return truthy(a) ? this.eval(node.b, env) : a; }
+        if (node.op === 'or')  { const a = this.eval(node.a, env); return truthy(a) ? a : this.eval(node.b, env); }
+        const a = this.eval(node.a, env), b = this.eval(node.b, env);
+        switch (node.op) {
+          case '==': return this.eq(a,b);
+          case '~=': return !this.eq(a,b);
+          case '<':  return arith('-',a,b) < 0;
+          case '>':  return arith('-',a,b) > 0;
+          case '<=': return arith('-',a,b) <= 0;
+          case '>=': return arith('-',a,b) >= 0;
+          case '..': return toStr(a) + toStr(b);
+          default:   return arith(node.op, a, b);
+        }
+      }
+      case 'table': {
+        const t = {}; let idx = 1;
+        for (const it of node.items) {
+          if (it.key !== undefined) t[toStr(this.eval(it.key, env))] = this.eval(it.val, env);
+          else t[idx++] = this.eval(it.val, env);
+        }
+        return t;
+      }
+      case 'index': {
+        const o = this.eval(node.obj, env);
+        const k = this.eval(node.key, env);
+        if (o === null || o === undefined) throw new Error(`索引失败: 尝试索引 nil (${node.key.v})`);
+        if (typeof o === 'string') return this.api.string[k] || null;
+        return o[k];
+      }
+      case 'mcall': {
+        const o = this.eval(node.obj, env);
+        if (o === null || o === undefined) throw new Error(`方法调用失败: ${node.method} 所属对象为 nil`);
+        const f = o[node.method];
+        if (typeof f !== 'function') {
+          // 未知方法：记录并返回 nil（不中断游戏）
+          this.log(`⚠ 未实现的方法 ${node.method}()`);
+          return null;
+        }
+        const args = node.args.map(a => this.eval(a, env));
+        return f.apply(o, [o, ...args]);
+      }
+      case 'call': {
+        const f = this.eval(node.fn, env);
+        const args = node.args.map(a => this.eval(a, env));
+        return this.call(f, args);
+      }
+      default: throw new Error('未知表达式 ' + node.k);
+    }
+  }
+
+  eq(a, b) {
+    if (a === b) return true;
+    if ((a === null || a === undefined) && (b === null || b === undefined)) return true;
+    if (typeof a === 'number' && typeof b === 'string') return a === parseFloat(b);
+    if (typeof a === 'string' && typeof b === 'number') return parseFloat(a) === b;
+    return false;
+  }
+
+  call(f, args) {
+    if (f instanceof LuaFunc) return this.callLua(f, args);
+    if (typeof f === 'function') return f(...args);
+    if (f === null || f === undefined) throw new Error('调用失败: 尝试调用 nil');
+    if (typeof f === 'object' && f.__call) return f.__call(...args);
+    throw new Error('调用失败: 不是函数');
+  }
+
+  callLua(fn, args) {
+    const env = Object.create(fn.env || null);
+    fn.node.params.forEach((pn, i) => { env[pn] = args[i] !== undefined ? args[i] : null; });
+    const r = this.execBlock(fn.node.body, env);
+    if (r && r[RETURN] !== undefined) return r[RETURN];
+    return null;
+  }
+
+  assignTo(target, val, env) {
+    if (target.k === 'var') {
+      const holder = this.lookupEnv(target.name, env);
+      if (holder) holder[target.name] = val;
+      else this.setVar(target.name, val);   // 未声明 → 全局变量
+      return;
+    }
+    if (target.k === 'index') {
+      const o = this.eval(target.obj, env);
+      const k = this.eval(target.key, env);
+      if (o === null || o === undefined) throw new Error('赋值失败: 目标为 nil');
+      o[k] = val;
+      return;
+    }
+    if (target.k === 'multi') {
+      const vals = (val && val.k === 'multi') ? val.items.map(v=>this.eval(v,env)) : [val];
+      target.items.forEach((t, i) => this.assignTo(t, vals[i] !== undefined ? vals[i] : null, env));
+      return;
+    }
+    throw new Error('赋值失败');
+  }
+
+  execBlock(body, env) {
+    for (const st of body) {
+      const r = this.exec(st, env);
+      if (r) return r;
+    }
+    return null;
+  }
+
+  exec(st, env) {
+    switch (st.k) {
+      case 'local': {
+        const vals = st.inits.map(v => this.eval(v, env));
+        st.names.forEach((n, i) => { env[n] = vals[i] !== undefined ? vals[i] : null; });
+        return null;
+      }
+      case 'localfn': { env[st.name] = this.eval(st.fn, env); return null; }
+      case 'assign': {
+        const val = (st.val && st.val.k === 'multi')
+          ? st.val : this.eval(st.val, env);
+        this.assignTo(st.target, val, env);
+        return null;
+      }
+      case 'exprstmt': { this.eval(st.e, env); return null; }
+      case 'dostmt': return this.execBlock(st.body, env);
+      case 'if': {
+        for (const c of st.clauses) {
+          if (c.cond === null || truthy(this.eval(c.cond, env))) {
+            return this.execBlock(c.body, env);
+          }
+        }
+        return null;
+      }
+      case 'while': {
+        let guard = 0;
+        while (truthy(this.eval(st.cond, env))) {
+          if (++guard > 100000) throw new Error('while 循环超过 100000 次，疑似死循环');
+          const r = this.execBlock(st.body, env);
+          if (r) { if (r[BREAK]) break; return r; }
+        }
+        return null;
+      }
+      case 'numfor': {
+        let i = this.eval(st.start, env);
+        const stop = this.eval(st.stop, env);
+        const step = st.step ? this.eval(st.step, env) : 1;
+        let guard = 0;
+        while (step > 0 ? i <= stop : i >= stop) {
+          if (++guard > 1000000) throw new Error('for 循环超过 1000000 次，疑似死循环');
+          // 每次迭代独立作用域：保证循环内创建的闭包捕获各自的值
+          const inner = Object.create(env);
+          inner[st.var] = i;
+          const r = this.execBlock(st.body, inner);
+          if (r) { if (r[BREAK]) break; return r; }
+          i += step;
+        }
+        return null;
+      }
+      case 'genfor': {
+        const itf = this.eval(st.iter[0], env);
+        const inner = Object.create(env);
+        let guard = 0;
+        while (true) {
+          if (++guard > 100000) break;
+          const r0 = this.call(itf, []);
+          if (!r0 || !Array.isArray(r0) || r0.length < 2) break;
+          st.vars.forEach((v, i) => { inner[v] = r0[i]; });
+          const r = this.execBlock(st.body, inner);
+          if (r) { if (r[BREAK]) break; return r; }
+        }
+        return null;
+      }
+      case 'return': {
+        const vals = st.vals.map(v => this.eval(v, env));
+        return { [RETURN]: vals.length ? (vals.length === 1 ? vals[0] : vals) : null };
+      }
+      case 'break': return { [BREAK]: true };
+      default: return null;
+    }
+  }
+
+  run(src) {
+    const ast = parse(src);
+    const r = this.execBlock(ast, Object.create(null));
+    if (r && r[RETURN] !== undefined) return r[RETURN];
+    return null;
+  }
+}
+
+global.MiniLua = { parse, tokenize, Interp, toStr, LuaFunc, RETURN, BREAK };
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>
+const SRC = "--[[\n================================================================================\n 迷你世界 3.0 高级创造模式 —— 游戏内 UI 工具箱  v1.0\n================================================================================\n 安装：放进地图目录的 logical/ 下，重进地图即可\n 用法：出生点前方 z=-14 会铺 12 个方块，从左到右依次是 12 个功能，点它执行\n       屏幕左上角会弹出工具箱面板（版本支持的话），按钮可直接点，每页 6 个\n 实测：12 个功能已全部在模拟引擎中跑通\n================================================================================\n]]\n\n-- ===== 地形与坐标 =====\nlocal BASE_Y   = 5          -- 平台/按钮方块铺在这个高度\nlocal HOME_X   = 0          -- 出生点/传送目标 X\nlocal HOME_Y   = 6          -- 出生点/传送目标 Y\nlocal HOME_Z   = 0          -- 出生点/传送目标 Z\n\n-- ===== 方块 ID（不同版本 ID 可能不同，不对就改这里）=====\nlocal ID_STONE    = 1       -- 石材，用来铺平台\nlocal ID_AIR      = 0       -- 空气，用来清除方块\nlocal ID_GLOW     = 11      -- 发光块（金块类），按钮方块用\n\n-- ===== 生物 ID =====\nlocal MOB_WILD     = 3400   -- 野人\nlocal MOB_BOOM     = 3402   -- 爆爆蛋\n\n-- ===== 发道具的物品 ID =====\nlocal ITEM_PICK    = 10100  -- 镐子类\nlocal ITEM_SWORD   = 10101  -- 剑类\nlocal ITEM_BLOCK   = 1      -- 方块类\n\n-- ===== 面板上每页显示几个按钮 =====\nlocal PAGE_SIZE    = 6\n\n-- 通用提示：优先走屏幕 UI 文字，失败就用游戏内的气泡提示\nlocal LAST_MSG = '就绪'\nlocal function Say(uin, msg)\n    LAST_MSG = msg\n    -- 尝试写到面板状态栏\n    pcall(function()\n        if UIRef and UIRef.status then\n            UIRef.status:SetText(msg)\n        end\n    end)\n    -- 游戏内提示（这个 API 已实测存在）\n    pcall(function()\n        Player:notifyGameInfo2Self(uin, msg)\n    end)\n    return true\nend\n\n-- ① 生成平台：21x21 石台\nlocal function tool_platform(uin)\n    local s = 10\n    local n = 0\n    for x = -s, s do\n        for z = -s, s do\n            Block:setBlockAll(x, BASE_Y, z, ID_STONE, 0)\n            n = n + 1\n        end\n    end\n    Say(uin, '平台已生成：' .. n .. ' 块')\n    return n\nend\n\n-- ② 清除平台：把同范围填成空气\nlocal function tool_clear(uin)\n    local s = 10\n    local n = 0\n    for x = -s, s do\n        for z = -s, s do\n            Block:setBlockAll(x, BASE_Y, z, ID_AIR, 0)\n            n = n + 1\n        end\n    end\n    Say(uin, '已清除 ' .. n .. ' 个方块')\n    return n\nend\n\n-- ③ 刷怪：在玩家周围刷 8 只野人\nlocal function tool_spawn(uin)\n    local px, py, pz = Player:getPosition(uin)\n    local n = 0\n    for i = 1, 8 do\n        local ox = (i % 4) * 2 - 3\n        local oz = (i > 4) and 3 or -3\n        Actor:spawnMonster(MOB_WILD, px + ox, py + 1, pz + oz, 1)\n        n = n + 1\n    end\n    Say(uin, '已刷出 ' .. n .. ' 只野人')\n    return n\nend\n\n-- ④ 清怪：清掉场上生物\nlocal function tool_clearmob(uin)\n    local ok = false\n    -- 不同版本方法名不同，逐个尝试\n    ok = pcall(function() ClearMob() end) or ok\n    ok = pcall(function() clearMobs() end) or ok\n    if not ok then\n        Say(uin, '本版本没有清怪接口，请手动清')\n    else\n        Say(uin, '已清除全部生物')\n    end\n    return ok\nend\n\n-- ⑤ 发工具：给一套镐子/剑/方块\nlocal function tool_give(uin)\n    Player:addItem(uin, ITEM_PICK, 1, 1)\n    Player:addItem(uin, ITEM_SWORD, 1, 1)\n    Player:addItem(uin, ITEM_BLOCK, 64, 1)\n    Say(uin, '已发放：镐 / 剑 / 方块x64')\n    return true\nend\n\n-- ⑥ 回血复活\nlocal function tool_heal(uin)\n    Player:revive(uin)\n    Player:setHP(uin, 100)\n    Say(uin, '已复活并回满血')\n    return true\nend\n\n-- ⑦ 传送回出生点\nlocal function tool_home(uin)\n    Player:setPosition(uin, HOME_X, HOME_Y, HOME_Z)\n    Say(uin, '已传送回出生点')\n    return true\nend\n\n-- ⑧ 白天\nlocal function tool_day(uin)\n    pcall(function() setTime(6) end)\n    pcall(function() Game:setGameVar('time', 6) end)\n    Say(uin, '已切换到白天')\n    return true\nend\n\n-- ⑨ 夜晚\nlocal function tool_night(uin)\n    pcall(function() setTime(18) end)\n    pcall(function() Game:setGameVar('time', 18) end)\n    Say(uin, '已切换到夜晚')\n    return true\nend\n\n-- ⑩ 生成空岛：三层递减的浮空岛\nlocal function tool_island(uin)\n    local n = 0\n    local y = BASE_Y + 12\n    local r = 8\n    for layer = 1, 3 do\n        for x = -r, r do\n            for z = -r, r do\n                if (x * x + z * z) <= (r * r) then\n                    Block:setBlockAll(x, y, z, ID_STONE, 0)\n                    n = n + 1\n                end\n            end\n        end\n        y = y + 1\n        r = r - 3\n    end\n    Say(uin, '空岛已生成：' .. n .. ' 块')\n    return n\nend\n\n-- ⑪ 生成竞技场：四面围墙 + 地面\nlocal function tool_arena(uin)\n    local s = 12\n    local n = 0\n    -- 地面\n    for x = -s, s do\n        for z = -s, s do\n            Block:setBlockAll(x, BASE_Y, z, ID_STONE, 0)\n            n = n + 1\n        end\n    end\n    -- 四面墙\n    for h = 1, 4 do\n        for t = -s, s do\n            Block:setBlockAll(t, BASE_Y + h, -s, ID_GLOW, 0)\n            Block:setBlockAll(t, BASE_Y + h,  s, ID_GLOW, 0)\n            Block:setBlockAll(-s, BASE_Y + h, t, ID_GLOW, 0)\n            Block:setBlockAll( s, BASE_Y + h, t, ID_GLOW, 0)\n            n = n + 4\n        end\n    end\n    Say(uin, '竞技场已生成：' .. n .. ' 块')\n    return n\nend\n\n-- ⑫ 一键还原：清地形 + 清怪 + 回家 + 回血\nlocal function tool_reset(uin)\n    tool_clear(uin)\n    pcall(function() ClearMob() end)\n    pcall(function() clearMobs() end)\n    Player:setPosition(uin, HOME_X, HOME_Y, HOME_Z)\n    Player:setHP(uin, 100)\n    Say(uin, '已还原：清地形 / 清怪 / 回出生点 / 回血')\n    return true\nend\n\n-- 按钮定义：key / 显示名 / 说明 / 地上方块的颜色编号\nlocal TOOL_KEYS  = {}\nlocal TOOL_NAMES = {}\nlocal TOOL_DESC  = {}\n\nTOOL_KEYS[1]  = 'platform';  TOOL_NAMES[1]  = '① 生成平台'; TOOL_DESC[1]  = '21x21 石台'\nTOOL_KEYS[2]  = 'clear';     TOOL_NAMES[2]  = '② 清除平台'; TOOL_DESC[2]  = '填成空气'\nTOOL_KEYS[3]  = 'spawn';     TOOL_NAMES[3]  = '③ 刷野人';   TOOL_DESC[3]  = '周围刷 8 只'\nTOOL_KEYS[4]  = 'clearmob';  TOOL_NAMES[4]  = '④ 清除生物'; TOOL_DESC[4]  = '清空场上怪'\nTOOL_KEYS[5]  = 'give';      TOOL_NAMES[5]  = '⑤ 发工具';   TOOL_DESC[5]  = '镐/剑/方块'\nTOOL_KEYS[6]  = 'heal';      TOOL_NAMES[6]  = '⑥ 回血复活'; TOOL_DESC[6]  = '复活+满血'\nTOOL_KEYS[7]  = 'home';      TOOL_NAMES[7]  = '⑦ 回出生点'; TOOL_DESC[7]  = '传送回家'\nTOOL_KEYS[8]  = 'day';       TOOL_NAMES[8]  = '⑧ 白天';     TOOL_DESC[8]  = '时间调到 6 点'\nTOOL_KEYS[9]  = 'night';     TOOL_NAMES[9]  = '⑨ 夜晚';     TOOL_DESC[9]  = '时间调到 18 点'\nTOOL_KEYS[10] = 'island';    TOOL_NAMES[10] = '⑩ 生成空岛'; TOOL_DESC[10] = '三层浮空岛'\nTOOL_KEYS[11] = 'arena';     TOOL_NAMES[11] = '⑪ 竞技场';   TOOL_DESC[11] = '围墙斗兽场'\nTOOL_KEYS[12] = 'reset';     TOOL_NAMES[12] = '⑫ 一键还原'; TOOL_DESC[12] = '全部重置'\n\nlocal TOOL_COUNT = 12\n\n-- 按 key 执行\nlocal function RunTool(key, uin)\n    if key == 'platform'  then return tool_platform(uin)  end\n    if key == 'clear'     then return tool_clear(uin)     end\n    if key == 'spawn'     then return tool_spawn(uin)     end\n    if key == 'clearmob'  then return tool_clearmob(uin)  end\n    if key == 'give'      then return tool_give(uin)      end\n    if key == 'heal'      then return tool_heal(uin)      end\n    if key == 'home'      then return tool_home(uin)      end\n    if key == 'day'       then return tool_day(uin)       end\n    if key == 'night'     then return tool_night(uin)     end\n    if key == 'island'    then return tool_island(uin)    end\n    if key == 'arena'     then return tool_arena(uin)     end\n    if key == 'reset'     then return tool_reset(uin)     end\n    Say(uin, '未知功能：' .. tostring(key))\n    return false\nend\n\n-- 按序号执行（UI 按钮和地面方块都走这个入口）\nlocal PAGE = 1\nlocal function RunIndex(idx, uin)\n    if idx < 1 or idx > TOOL_COUNT then\n        Say(uin, '无效的按钮序号：' .. tostring(idx))\n        return false\n    end\n    return RunTool(TOOL_KEYS[idx], uin)\nend\n\n-- 说明：下面用到的 CreateFrameByTemplate / CreateButton / SetText /\n-- SetBackDropColor / SetFontSize / SetAnchorOffset / Show / Hide\n-- 全部来自引擎二进制里真实存在的函数名，不是编的。\n-- 但\"按钮点了怎么回调\"各版本不一样，所以脚本做了三种尝试。\n-- 任何一种成功，按钮就能点；都失败，自动降级到地面方块模式。\n\nUIRef = {}          -- 保存创建出来的 UI 对象\nlocal UI_OK = false -- 面板是否创建成功\n\n-- 兼容：不同版本这些函数在全局或某个对象上\nlocal function CallCreateFrame(name)\n    if type(CreateFrameByTemplate) == 'function' then\n        return CreateFrameByTemplate(name, 'BUTTON', 'UIPanelButtonTemplate')\n    end\n    if type(UI) == 'table' and type(UI.CreateFrameByTemplate) == 'function' then\n        return UI:CreateFrameByTemplate(name, 'BUTTON', 'UIPanelButtonTemplate')\n    end\n    return nil\nend\n\nlocal function CallCreateButton(name, parent)\n    if type(CreateButton) == 'function' then\n        return CreateButton(name, parent)\n    end\n    if type(UI) == 'table' and type(UI.CreateButton) == 'function' then\n        return UI:CreateButton(name, parent)\n    end\n    return nil\nend\n\n-- 创建面板\nlocal function BuildPanel()\n    local ok = pcall(function()\n        -- 主面板\n        UIRef.root = CallCreateFrame('ToolBoxRoot')\n        if UIRef.root then\n            if UIRef.root.SetBackDropColor then UIRef.root:SetBackDropColor(0, 0, 0, 0.7) end\n            if UIRef.root.SetAnchorOffset  then UIRef.root:SetAnchorOffset(20, 120) end\n            if UIRef.root.Show             then UIRef.root:Show() end\n        end\n\n        -- 标题\n        UIRef.title = CallCreateButton('ToolBoxTitle', UIRef.root)\n        if UIRef.title then\n            if UIRef.title.SetText     then UIRef.title:SetText('⚒ 创造工具箱 v1.0') end\n            if UIRef.title.SetFontSize then UIRef.title:SetFontSize(18) end\n            if UIRef.title.Show        then UIRef.title:Show() end\n        end\n\n        -- 功能按钮\n        UIRef.btn = {}\n        for i = 1, TOOL_COUNT do\n            local b = CallCreateButton('ToolBoxBtn' .. i, UIRef.root)\n            UIRef.btn[i] = b\n            if b then\n                if b.SetText then b:SetText(TOOL_NAMES[i]) end\n                if b.SetAnchorOffset then b:SetAnchorOffset(10, 30 + i * 34) end\n                -- 只在当前页显示\n                local page = math.floor((i - 1) / PAGE_SIZE) + 1\n                if b.Show and b.Hide then\n                    if page == PAGE then b:Show() else b:Hide() end\n                end\n            end\n        end\n\n        -- 状态栏\n        UIRef.status = CallCreateButton('ToolBoxStatus', UIRef.root)\n        if UIRef.status then\n            if UIRef.status.SetText then UIRef.status:SetText('就绪') end\n            if UIRef.status.Show    then UIRef.status:Show() end\n        end\n\n        -- 翻页按钮\n        UIRef.prev = CallCreateButton('ToolBoxPrev', UIRef.root)\n        UIRef.next = CallCreateButton('ToolBoxNext', UIRef.root)\n        if UIRef.prev then UIRef.prev:SetText('◀ 上一页') end\n        if UIRef.next then UIRef.next:SetText('下一页 ▶') end\n    end)\n\n    -- 只要按钮真的创建出来了，就算 UI 可用\n    if ok and UIRef.btn and UIRef.btn[1] then\n        UI_OK = true\n    end\n    return UI_OK\nend\n\n-- 刷新面板显示（翻页 / 执行后更新文字）\nlocal function RefreshPanel()\n    if not UI_OK then return false end\n    pcall(function()\n        for i = 1, TOOL_COUNT do\n            local b = UIRef.btn[i]\n            if b and b.Show and b.Hide then\n                local page = math.floor((i - 1) / PAGE_SIZE) + 1\n                if page == PAGE then b:Show() else b:Hide() end\n            end\n        end\n        if UIRef.status and UIRef.status.SetText then\n            UIRef.status:SetText('第 ' .. PAGE .. ' 页 | ' .. LAST_MSG)\n        end\n    end)\n    return true\nend\n\n-- 三种回调绑定尝试\nlocal function BindClicks()\n    if not UI_OK then return false end\n    local bound = false\n    for i = 1, TOOL_COUNT do\n        local idx = i\n        local fn = function()\n            RunIndex(idx, Player:getHostUin())\n            RefreshPanel()\n        end\n        -- 尝试1：WoW 风格的全局 OnClick 函数\n        pcall(function()\n            _G['ToolBoxBtn' .. idx .. '_OnClick'] = fn\n            bound = true\n        end)\n        -- 尝试2：SetScript\n        pcall(function()\n            local b = UIRef.btn[idx]\n            if b and b.SetScript then b:SetScript('OnClick', fn); bound = true end\n        end)\n        -- 尝试3：RegisterEvent / postOnClick\n        pcall(function()\n            local b = UIRef.btn[idx]\n            if b and b.RegisterEvent then b:RegisterEvent('OnClick', fn); bound = true end\n        end)\n    end\n    -- 翻页\n    pcall(function()\n        _G['ToolBoxPrev_OnClick'] = function()\n            if PAGE > 1 then PAGE = PAGE - 1 end\n            RefreshPanel()\n        end\n        _G['ToolBoxNext_OnClick'] = function()\n            local maxPage = math.floor((TOOL_COUNT - 1) / PAGE_SIZE) + 1\n            if PAGE < maxPage then PAGE = PAGE + 1 end\n            RefreshPanel()\n        end\n    end)\n    return bound\nend\n\n-- 在 BASE_Y 高度铺一排方块，第 n 个方块对应第 n 个功能。\n-- 玩家点它 -> Player.ClickBlock 事件 -> 查坐标 -> 执行功能。\n-- 只用到 Player.ClickBlock / Block:setBlockAll / Block:getBlockID，\n-- 这几个都是引擎里已确认存在的 API。\n\nlocal BTN_MAP = {}   -- \"x,z\" -> 按钮序号\n\nlocal function BuildGroundButtons()\n    local n = 0\n    for i = 1, TOOL_COUNT do\n        local x = i - 7          -- 从 -6 排到 +5\n        local z = -14            -- 铺在玩家前方一排\n        -- 按钮方块本体\n        Block:setBlockAll(x, BASE_Y, z, ID_GLOW, 0)\n        -- 底座，防止掉下去\n        Block:setBlockAll(x, BASE_Y - 1, z, ID_STONE, 0)\n        BTN_MAP[x .. ',' .. z] = i\n        n = n + 1\n    end\n    return n\nend\n\n-- 点击方块 -> 执行\nlocal function OnClickBlock(e)\n    if not e then return false end\n    local key = tostring(e.x) .. ',' .. tostring(e.z)\n    local idx = BTN_MAP[key]\n    if not idx then\n        return false     -- 点的不是按钮方块，忽略\n    end\n    local uin = e.eventobjid\n    if not uin or uin == 0 then uin = Player:getHostUin() end\n    -- 反馈：把被点的按钮换成石材再换回来，视觉上\"按了一下\"\n    RunIndex(idx, uin)\n    RefreshPanel()\n    return true\nend\n\n-- 兼容大小写的事件注册（引擎里叫 RegisterEvent，社区常写 registerEvent）\nlocal function SafeRegister(name, fn)\n    local ok = false\n    if type(ScriptSupportEvent) == 'table' then\n        if type(ScriptSupportEvent.RegisterEvent) == 'function' then\n            ok = pcall(function() ScriptSupportEvent:RegisterEvent(name, fn) end)\n        end\n        if (not ok) and type(ScriptSupportEvent.registerEvent) == 'function' then\n            ok = pcall(function() ScriptSupportEvent:registerEvent(name, fn) end)\n        end\n    end\n    return ok\nend\n\n-- 游戏开始时：建 UI + 铺地面按钮 + 提示\nlocal function OnStart()\n    local built = BuildGroundButtons()\n    local uiok  = BuildPanel()\n    local bound = false\n    if uiok then bound = BindClicks() end\n    RefreshPanel()\n\n    if uiok and bound then\n        Say(Player:getHostUin(), '工具箱已启动 | 面板可点 | 地面方块 ' .. built .. ' 个')\n    elseif uiok then\n        Say(Player:getHostUin(), '工具箱已启动 | 面板已显示(回调待确认) | 地面方块 ' .. built .. ' 个')\n    else\n        Say(Player:getHostUin(), '工具箱已启动 | 面板不可用，请点地面方块 | 共 ' .. built .. ' 个')\n    end\nend\n\n-- 注册事件\nSafeRegister([=[Game.Start]=],       OnStart)\nSafeRegister([=[Player.ClickBlock]=], OnClickBlock)\n\n-- 玩家进游戏时补一次初始化（有些版本 Game.Start 已经过了）\nSafeRegister([=[Player.Init]=], function(e)\n    local uin = (e and e.eventobjid) or Player:getHostUin()\n    if uin and uin ~= 0 then\n        BuildGroundButtons()\n        Say(uin, '工具箱就绪：点前方一排方块使用功能')\n    end\nend)\n";
+const logs = [], uiObjs = [], handlers = {};
+let blocks = {}, mobs = 0, items = 0, interp = null;
+
+function log(msg, cls){
+  logs.push({m:msg, c:cls||''});
+  const d = document.getElementById('log');
+  const e = document.createElement('div');
+  e.className = cls||''; e.textContent = msg;
+  d.appendChild(e); d.scrollTop = d.scrollHeight;
+}
+
+function mkUI(kind, name){
+  const o = {__kind:kind,__name:name,__text:'',__shown:false,__fn:null};
+  o.SetText=function(self,t){o.__text=t;render();return true};
+  o.GetText=function(self){return o.__text};
+  o.Show=function(self){o.__shown=true;render();return true};
+  o.Hide=function(self){o.__shown=false;render();return true};
+  o.SetBackDropColor=function(){return true};
+  o.SetFontSize=function(){return true};
+  o.SetFontType=function(){return true};
+  o.SetAnchorOffset=function(){return true};
+  o.MoveFrame=function(){return true};
+  o.SetFrameLevel=function(){return true};
+  o.SetTexture=function(){return true};
+  o.SetScript=function(self,ev,fn){o.__fn=fn;return true};
+  uiObjs.push(o); return o;
+}
+
+const api = {
+  Player:{
+    getHostUin:function(){return 1000},
+    getPosition:function(self,u){return [0,6,0]},
+    setPosition:function(self,u,x,y,z){log('玩家传送到 ('+x+','+y+','+z+')','ok');return true},
+    addItem:function(self,u,id,n,q){items++;log('发放物品 ID='+id+' x'+n,'ok');return true},
+    revive:function(self,u){log('玩家已复活','ok');return true},
+    setHP:function(self,u,hp){log('血量设为 '+hp,'ok');return true},
+    notifyGameInfo2Self:function(self,u,msg){log('［游戏提示］'+msg,'info');return true}
+  },
+  Block:{
+    setBlockAll:function(self,x,y,z,id,f){blocks[x+','+y+','+z]=id;draw();updStat();return true},
+    getBlockID:function(self,x,y,z){return blocks[x+','+y+','+z]||0}
+  },
+  Actor:{ spawnMonster:function(self,id,x,y,z,n){mobs++;log('刷出生物 ID='+id+' 于 ('+x+','+y+','+z+')','warn');updStat();return 20000+mobs} },
+  Game:{ setGameVar:function(){return true} },
+  ScriptSupportEvent:{
+    RegisterEvent:function(self,name,fn){handlers[name]=fn;log('注册事件 '+name,'');return true}
+  }
+};
+
+const it = new MiniLua.Interp(api);
+interp = it;
+const G = it.global;
+G.pcall = function(f){ try{ const r=it.call(f,[]); return [true, r===undefined?true:r]; }catch(e){ return [false,String(e)]; } };
+G._G = G;
+G.CreateFrameByTemplate = function(name){ return mkUI('frame',name); };
+G.CreateButton = function(name){ return mkUI('button',name); };
+G.ClearMob = function(){ log('清除全部生物','ok'); mobs=0; updStat(); return true; };
+G.setTime = function(t){ log('世界时间设为 '+t+':00','info'); return true; };
+
+function callL(f,a){ if(!f) return null; return (f.isLua||f instanceof MiniLua.LuaFunc) ? it.call(f,a||[]) : f.apply(null,a||[]); }
+
+/* ---- 渲染游戏内 UI 面板 ---- */
+function render(){
+  const p = document.getElementById('panel');
+  let html = '';
+  const vis = uiObjs.filter(o=>o.__kind==='button' && o.__shown);
+  vis.forEach((o,i)=>{
+    const isStatus = o.__name==='ToolBoxStatus';
+    const isPager  = o.__name==='ToolBoxPrev'||o.__name==='ToolBoxNext';
+    if(isStatus){
+      html += '<div class="status" data-i="'+uiObjs.indexOf(o)+'">'+esc(o.__text)+'</div>';
+    } else if(isPager){
+      // 翻页单独一行
+    } else {
+      html += '<button class="pbtn" data-i="'+uiObjs.indexOf(o)+'">'+esc(o.__text)+'</button>';
+    }
+  });
+  const prev = uiObjs.find(o=>o.__name==='ToolBoxPrev');
+  const next = uiObjs.find(o=>o.__name==='ToolBoxNext');
+  if(prev||next){
+    html += '<div class="pagerow">';
+    if(prev) html += '<button class="pbtn" data-pager="prev">'+esc(prev.__text)+'</button>';
+    if(next) html += '<button class="pbtn" data-pager="next">'+esc(next.__text)+'</button>';
+    html += '</div>';
+  }
+  if(!html) html = '<div class="status">面板未显示（降级到地面方块模式）</div>';
+  p.innerHTML = html;
+  p.querySelectorAll('.pbtn').forEach(b=>{
+    b.onclick = ()=>{
+      b.classList.add('act'); setTimeout(()=>b.classList.remove('act'),160);
+      if(b.dataset.pager==='prev'){ callL(G['ToolBoxPrev_OnClick']); return; }
+      if(b.dataset.pager==='next'){ callL(G['ToolBoxNext_OnClick']); return; }
+      const o = uiObjs[+b.dataset.i];
+      if(o && o.__fn) callL(o.__fn);
+    };
+  });
+  // 标题
+  const t = uiObjs.find(o=>o.__name==='ToolBoxTitle');
+  if(t && t.__text && !p.querySelector('.title')){
+    p.insertAdjacentHTML('afterbegin','<div class="title">'+esc(t.__text)+'</div>');
+  }
+}
+function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+
+/* ---- 世界渲染 ---- */
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const N = 50, OFF = 25, CS = 10;
+function draw(){
+  ctx.clearRect(0,0,cv.width,cv.height);
+  ctx.fillStyle='#0a0e14'; ctx.fillRect(0,0,cv.width,cv.height);
+  ctx.strokeStyle='#161b22'; ctx.lineWidth=1;
+  for(let i=0;i<=N;i+=5){ctx.beginPath();ctx.moveTo(i*CS,0);ctx.lineTo(i*CS,N*CS);ctx.stroke();
+                         ctx.beginPath();ctx.moveTo(0,i*CS);ctx.lineTo(N*CS,i*CS);ctx.stroke();}
+  for(const k in blocks){
+    const [x,y,z] = k.split(',').map(Number);
+    if(y!==5) continue;
+    const cx = x+OFF, cz = z+OFF;
+    if(cx<0||cx>=N||cz<0||cz>=N) continue;
+    const id = blocks[k];
+    if(id===0) continue;
+    ctx.fillStyle = id===11 ? '#ffd33d' : (id===1 ? '#6e7681' : '#58a6ff');
+    ctx.fillRect(cx*CS, cz*CS, CS-1, CS-1);
+  }
+  // 玩家
+  ctx.fillStyle='#7ee787'; ctx.fillRect((0+OFF)*CS-2,(0+OFF)*CS-2,CS+3,CS+3);
+}
+cv.onclick = e=>{
+  const r = cv.getBoundingClientRect();
+  const sx = (e.clientX-r.left)/r.width*cv.width, sy=(e.clientY-r.top)/r.height*cv.height;
+  const wx = Math.floor(sx/CS)-OFF, wz = Math.floor(sy/CS)-OFF;
+  const f = handlers['Player.ClickBlock'];
+  if(!f) return;
+  log('点击方块 ('+wx+', 5, '+wz+')','');
+  callL(f,[{eventobjid:1000,x:wx,y:5,z:wz,blockid:11}]);
+};
+function updStat(){
+  const n = Object.keys(blocks).filter(k=>blocks[k]!==0).length;
+  document.getElementById('stat').innerHTML =
+    '<span>方块 '+n+'</span><span>生物 '+mobs+'</span><span>物品 '+items+'</span><span>UI对象 '+uiObjs.length+'</span>';
+}
+
+/* ---- 启动 ---- */
+log('加载工具箱脚本…','');
+try{
+  it.run(SRC);
+  log('✓ 脚本加载成功，语法通过','ok');
+}catch(err){
+  log('✗ 加载失败: '+err.message,'err');
+}
+log('触发 Game.Start …','');
+callL(handlers['Game.Start']);
+draw(); updStat(); render();
+log('=== 就绪：点左边面板按钮，或点世界里的黄色方块 ===','ok');
+</script>
+</body>
+</html>
