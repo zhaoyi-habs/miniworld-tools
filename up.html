@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>元宝 · 浏览器直传</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;padding:14px;background:#0d1117;color:#c9d1d9;font:14px/1.6 -apple-system,system-ui,sans-serif}
+h1{font-size:17px;color:#58a6ff;margin:0 0 4px}
+.sub{color:#8b949e;font-size:12px;margin-bottom:14px}
+.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:12px;margin-bottom:12px}
+label{display:block;font-size:12px;color:#8b949e;margin:8px 0 4px}
+input,select{width:100%;padding:10px;background:#0d1117;border:1px solid #30363d;border-radius:7px;color:#c9d1d9;font-size:15px}
+button{width:100%;padding:13px;margin-top:10px;border:0;border-radius:8px;background:#238636;color:#fff;font-size:15px;font-weight:600}
+button.sec{background:#21262d;border:1px solid #30363d;color:#c9d1d9}
+button.stop{background:#da3633}
+button:disabled{opacity:.5}
+.bar{height:20px;background:#21262d;border-radius:10px;overflow:hidden;margin:10px 0}
+.bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,#238636,#3fb950);transition:width .3s;font-size:11px;text-align:center;color:#fff}
+#log{height:190px;overflow-y:auto;background:#010409;border:1px solid #30363d;border-radius:7px;padding:8px;font:11px/1.5 ui-monospace,monospace;white-space:pre-wrap;word-break:break-all}
+.g{color:#3fb950}.r{color:#f85149}.y{color:#d29922}.b{color:#58a6ff}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.hint{font-size:11px;color:#8b949e;margin-top:6px}
+</style></head><body>
+<h1>元宝 · 浏览器直传</h1>
+<div class="sub">不用装 App，网页直接传。GitHub API 原生支持跨域，不走任何代理。</div>
+
+<div class="card">
+<label>GitHub 令牌</label>
+<input id="tk" placeholder="ghp_ 开头" autocomplete="off">
+<label>目标仓库（逗号分隔，大文件自动轮换）</label>
+<input id="rp" value="zhaoyi-habs/yuanbao-store2,zhaoyi-habs/yuanbao-store3,zhaoyi-habs/yuanbao-store4,zhaoyi-habs/yuanbao-store5,zhaoyi-habs/yuanbao-store6,zhaoyi-habs/yuanbao-store8,zhaoyi-habs/yuanbao-store9,zhaoyi-habs/yuanbao-store10">
+<div class="row">
+<div><label>分片 MB</label><select id="ch"><option>4</option><option>8</option><option selected>16</option><option>20</option></select></div>
+<div><label>并发</label><select id="par"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>6</option></select></div>
+</div>
+</div>
+
+<div class="card">
+<button onclick="pick(false)">📄 选择文件（可多选）</button>
+<button class="sec" onclick="pick(true)">📁 选择整个文件夹（子目录也会传）</button>
+<div class="hint">大文件请连 WiFi。传输中请保持本页面在前台（浏览器切后台会暂停）。</div>
+<div id="finfo" class="hint"></div>
+</div>
+
+<div class="card">
+<div class="bar"><i id="pg">0%</i></div>
+<div class="row">
+<button id="go" onclick="start()" disabled>开始上传</button>
+<button class="stop" id="sp" onclick="stop()" disabled>停止</button>
+</div>
+<button class="sec" onclick="clearDedup()">🗑 清除断点记录</button>
+<div id="st" class="hint"></div>
+</div>
+
+<div class="card"><div id="log"></div></div>
+
+<input type="file" id="fi" multiple style="display:none" onchange="onPick(event)">
+<input type="file" id="fd" webkitdirectory multiple style="display:none" onchange="onPick(event)">
+
+<script>
+var files=[],stopped=false,running=false,wake=null;
+var tkEl=document.getElementById('tk');
+if(location.hash.length>5) tkEl.value=location.hash.slice(1);
+try{var s=localStorage.getItem('yb_tk'); if(s&&!tkEl.value) tkEl.value=s;}catch(e){}
+
+function log(m,c){var d=document.createElement('div');if(c)d.className=c;
+ d.textContent='['+new Date().toTimeString().slice(0,8)+'] '+m;
+ var l=document.getElementById('log');l.appendChild(d);l.scrollTop=l.scrollHeight;}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+function pick(dir){document.getElementById(dir?'fd':'fi').click();}
+function fmt(n){return n>1073741824?(n/1073741824).toFixed(2)+'GB':n>1048576?(n/1048576).toFixed(1)+'MB':(n/1024).toFixed(0)+'KB';}
+
+function onPick(e){
+  var fs=[];
+  for(var i=0;i<e.target.files.length;i++) fs.push(e.target.files[i]);
+  if(!fs.length) return;
+  files=fs;
+  var t=0; files.forEach(f=>t+=f.size);
+  document.getElementById('finfo').innerHTML='已选 <b>'+files.length+'</b> 个文件，共 <b>'+fmt(t)+'</b>';
+  document.getElementById('go').disabled=false;
+  log('已选 '+files.length+' 个文件 / '+fmt(t),'b');
+}
+
+function toB64(u8){
+  var s='',C=0x8000;
+  for(var i=0;i<u8.length;i+=C) s+=String.fromCharCode.apply(null,u8.subarray(i,i+C));
+  return btoa(s);
+}
+
+async function putBlob(token,repo,b64,retry){
+  for(var a=0;a<=retry;a++){
+    if(stopped) return null;
+    try{
+      var r=await fetch('https://api.github.com/repos/'+repo+'/git/blobs',{
+        method:'POST',
+        headers:{Authorization:'token '+token,'Content-Type':'application/json'},
+        body:JSON.stringify({content:b64,encoding:'base64'})});
+      if(r.status===201||r.status===200){var j=await r.json();return j.sha;}
+      var t=await r.text();
+      if(r.status===422){log('✗ 分片过大被拒，请调小分片','r');return null;}
+      if(r.status===403&&/rate limit|secondary/i.test(t)){
+        log('⏳ 触发速率限制，等 60 秒…','y'); await sleep(60000); a--; continue;}
+      if(r.status===401){log('✗ 令牌无效或过期（401）','r'); stopped=true; return null;}
+      if(r.status===404){log('✗ 仓库不存在或无权限：'+repo,'r'); return null;}
+      log('✗ '+r.status+' '+t.slice(0,90),'r');
+    }catch(e){ log('网络错误：'+e.message,'y'); }
+    await sleep(2500*(a+1));
+  }
+  return null;
+}
+
+async function putFile(token,repo,path,content){
+  var sha=null;
+  try{
+    var r=await fetch('https://api.github.com/repos/'+repo+'/contents/'+path,{
+      headers:{Authorization:'token '+token}});
+    if(r.status===200){var j=await r.json(); sha=j.sha;}
+  }catch(e){}
+  var b={message:'mf '+path,content:toB64(new TextEncoder().encode(content))};
+  if(sha) b.sha=sha;
+  var r2=await fetch('https://api.github.com/repos/'+repo+'/contents/'+path,{
+    method:'PUT',headers:{Authorization:'token '+token,'Content-Type':'application/json'},
+    body:JSON.stringify(b)});
+  return r2.status===201||r2.status===200;
+}
+
+function stop(){stopped=true;log('⏹ 停止中…','y');}
+
+async function start(){
+  if(running) return;
+  var token=tkEl.value.trim();
+  if(!/^gh[pousr]_/.test(token)){log('✗ 令牌格式不对，应 ghp_ 开头','r');return;}
+  try{localStorage.setItem('yb_tk',token);}catch(e){}
+  var repos=document.getElementById('rp').value.split(',').map(s=>s.trim()).filter(Boolean);
+  var CH=parseInt(document.getElementById('ch').value)*1048576;
+  var PAR=parseInt(document.getElementById('par').value);
+  stopped=false;running=true;
+  document.getElementById('go').disabled=true;
+  document.getElementById('sp').disabled=false;
+  try{ if('wakeLock' in navigator) wake=await navigator.wakeLock.request('screen'); }catch(e){}
+
+  for(var fi=0;fi<files.length && !stopped;fi++){
+    var f=files[fi];
+    var rel=(f.webkitRelativePath||f.name);
+    var fid=Math.abs(hash(rel+f.size)).toString(36)+'_'+f.size.toString(36);
+    var parts=Math.ceil(f.size/CH)||1;
+    log('▶ '+rel+'  '+fmt(f.size)+'  '+parts+' 片','b');
+    var shas=new Array(parts).fill(null);
+    var partRepos=new Array(parts).fill(repos[0]);
+    var done=0;
+
+    for(var b0=0;b0<parts && !stopped;b0+=PAR){
+      var batch=[];
+      for(var k=0;k<PAR && b0+k<parts;k++){
+        var idx=b0+k;
+        var cached=loadCache(fid+'_'+idx);
+        if(cached){shas[idx]=cached.s;partRepos[idx]=cached.r;done++;continue;}
+        var blob=f.slice(idx*CH,Math.min((idx+1)*CH,f.size));
+        var buf=new Uint8Array(await blob.arrayBuffer());
+        batch.push({idx:idx,b64:toB64(buf)});
+        buf=null;
+      }
+      if(!batch.length){upd(done,parts);continue;}
+      var tasks=batch.map(function(it){
+        var repo=repos[it.idx%repos.length];
+        return putBlob(token,repo,it.b64,3).then(function(s){
+          return {idx:it.idx,sha:s,repo:repo};});
+      });
+      var rs=await Promise.all(tasks);
+      for(var q=0;q<rs.length;q++){
+        var r=rs[q];
+        if(r.sha){shas[r.idx]=r.sha;partRepos[r.idx]=r.repo;done++;
+          saveCache(fid+'_'+r.idx,r.sha,r.repo);
+        } else if(!stopped){ log('✗ 第 '+r.idx+' 片失败，稍后可续传','r'); }
+      }
+      upd(done,parts);
+      batch=null;
+    }
+
+    if(stopped) break;
+    var have=shas.filter(Boolean).length;
+    if(have===parts){
+      var m={name:f.name,rel:rel,size:f.size,chunk:CH,parts:parts,id:fid,
+             repos:repos,shas:shas,partRepos:partRepos,
+             ts:Date.now()};
+      var ok=await putFile(token,repos[0],'manifests/'+fid+'.json',JSON.stringify(m));
+      if(ok){log('✅ '+rel+' 完成，清单已写入 —— 告诉元宝「传完了」','g');}
+      else{log('⚠ 分片已传但清单写入失败，告诉元宝重试','y');}
+    } else {
+      log('⚠ '+rel+' 未完成 '+have+'/'+parts+'，可再次点击续传','y');
+    }
+  }
+  running=false;
+  document.getElementById('go').disabled=false;
+  document.getElementById('sp').disabled=true;
+  try{ if(wake) wake.release(); }catch(e){}
+  log(stopped?'⏹ 已停止':'🎉 全部处理完毕','g');
+}
+
+function upd(d,p){
+  var pc=p?Math.round(d*100/p):0;
+  var el=document.getElementById('pg');
+  el.style.width=pc+'%';el.textContent=pc+'%';
+  document.getElementById('st').textContent='分片 '+d+'/'+p;
+}
+function hash(s){var h=0;for(var i=0;i<s.length;i++){h=(h<<5)-h+s.charCodeAt(i);h|=0;}return h;}
+function saveCache(k,s,r){try{localStorage.setItem('yb_c_'+k,JSON.stringify({s:s,r:r}));}catch(e){}}
+function loadCache(k){try{var v=localStorage.getItem('yb_c_'+k);return v?JSON.parse(v):null;}catch(e){return null;}}
+function clearDedup(){
+  try{Object.keys(localStorage).filter(k=>k.indexOf('yb_c_')===0).forEach(k=>localStorage.removeItem(k));}catch(e){}
+  log('已清除断点记录','g');
+}
+log('就绪。填令牌 → 选文件 → 开始上传','b');
+log('提示：GitHub API 原生支持跨域，本页不走任何代理','b');
+</script></body></html>
