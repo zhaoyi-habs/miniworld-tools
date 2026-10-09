@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>元宝 · 全自动代理</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:#0d1117;color:#c9d1d9;font:14px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",Arial,sans-serif;padding-bottom:80px}
+header{background:#161b22;padding:13px 16px;border-bottom:1px solid #30363d;position:sticky;top:0;z-index:9}
+h1{font-size:15px;color:#58a6ff;font-weight:600}
+.sub{font-size:11px;color:#8b949e;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#6e7681;margin-right:4px}
+.dot.on{background:#3fb950;box-shadow:0 0 6px #3fb950}
+.dot.err{background:#f85149}.dot.run{background:#d29922;animation:bl 1s infinite}
+@keyframes bl{50%{opacity:.3}}
+.tabs{display:flex;background:#161b22;border-bottom:1px solid #30363d;position:sticky;top:52px;z-index:9}
+.tab{flex:1;padding:10px 0;text-align:center;font-size:12px;color:#8b949e;border-bottom:2px solid transparent}
+.tab.act{color:#58a6ff;border-bottom-color:#58a6ff;font-weight:600}
+.pane{display:none;padding:14px}.pane.act{display:block}
+label{display:block;font-size:12px;color:#8b949e;margin:12px 0 5px}
+input[type=text],textarea,select{width:100%;background:#0d1117;border:1px solid #30363d;color:#c9d1d9;border-radius:8px;padding:10px;font-size:14px;font-family:inherit}
+textarea{min-height:70px;resize:vertical}
+input:focus,textarea:focus{outline:0;border-color:#58a6ff}
+button{width:100%;background:#238636;color:#fff;border:0;border-radius:8px;padding:12px;font-size:14px;font-weight:600;margin-top:9px}
+button:active{opacity:.7}
+button.sec{background:#21262d;border:1px solid #30363d;color:#c9d1d9}
+button.warn{background:#8b2f2f}button.danger{background:#6e2020}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:11px;margin-top:10px;font-size:12px}
+.kv{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed #21262d}
+.kv:last-child{border:0}.kv b{color:#58a6ff;font-weight:500}
+.bar{height:6px;background:#21262d;border-radius:3px;overflow:hidden;margin-top:8px}
+.bar>i{display:block;height:100%;background:linear-gradient(90deg,#238636,#3fb950);width:0;transition:width .3s}
+#log{background:#010409;border:1px solid #30363d;border-radius:8px;padding:10px;margin-top:12px;height:230px;overflow-y:auto;font:11px/1.6 ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-all}
+.lg{padding:1px 0;border-bottom:1px solid #111}
+.lg.ok{color:#3fb950}.lg.err{color:#f85149}.lg.inf{color:#8b949e}.lg.hl{color:#d29922}
+.sw{display:flex;align-items:center;justify-content:space-between;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:11px;margin-top:10px;font-size:13px}
+.sw input{width:44px;height:24px;-webkit-appearance:none;appearance:none;background:#30363d;border-radius:12px;position:relative;outline:0}
+.sw input:checked{background:#238636}
+.sw input:after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:.2s}
+.sw input:checked:after{left:22px}
+pre.out{background:#010409;border:1px solid #30363d;border-radius:8px;padding:10px;margin-top:10px;max-height:250px;overflow:auto;font:11px/1.5 ui-monospace,monospace;white-space:pre-wrap;word-break:break-all}
+.tiny{font-size:11px;color:#6e7681;margin-top:6px;line-height:1.6}
+#big{position:fixed;inset:0;background:rgba(13,17,23,.97);display:flex;align-items:center;justify-content:center;flex-direction:column;z-index:99;padding:24px;text-align:center}
+#big.hide{display:none}
+#big h2{font-size:19px;color:#58a6ff;margin-bottom:12px}
+#big p{font-size:13px;color:#8b949e;line-height:1.8;margin-bottom:18px}
+#big input{background:#161b22;border:1px solid #30363d;color:#c9d1d9;border-radius:8px;padding:11px;width:100%;font-size:13px;font-family:ui-monospace,monospace}
+#big button{max-width:280px}
+</style>
+</head>
+<body>
+
+<div id="big">
+<h2>元宝 · 全自动代理</h2>
+<p>打开后无需任何操作<br>我会自动接管并保持连接</p>
+<input type="text" id="bigtk" placeholder="ghp_ 开头的 GitHub 令牌">
+<button id="biggo">启动</button>
+<p class="tiny" style="margin-top:14px">令牌仅保存在你手机本地，不会发给任何第三方</p>
+</div>
+
+<header>
+<h1>元宝 · 全自动代理</h1>
+<div class="sub">
+<span><span class="dot" id="dot"></span><span id="stat">启动中</span></span>
+<span id="hb">—</span><span id="batt">—</span><span id="net">—</span>
+</div>
+</header>
+
+<div class="tabs">
+<div class="tab act" data-p="auto">自动</div>
+<div class="tab" data-p="fetch">抓取</div>
+<div class="tab" data-p="up">上传</div>
+<div class="tab" data-p="cfg">设置</div>
+</div>
+
+<div class="pane act" id="p-auto">
+<div class="sw"><span>全自动运行（默认开启）</span><input type="checkbox" id="auto" checked></div>
+<div class="sw"><span>保持屏幕常亮</span><input type="checkbox" id="wake" checked></div>
+<label>轮询间隔（秒）</label>
+<input type="text" id="iv" value="4">
+<div class="card">
+<div class="kv"><span>待执行任务</span><b id="npend">—</b></div>
+<div class="kv"><span>已完成</span><b id="ndone">0</b></div>
+<div class="kv"><span>连续在线</span><b id="upT">0s</b></div>
+<div class="kv"><span>最后执行</span><b id="last">—</b></div>
+</div>
+<div class="tiny">全自动模式：我（元宝）会把要查的网址、要搜的关键词放进队列，你手机自动抓回并回传。上传的文件我也会自动拼装。</div>
+<div id="log"></div>
+</div>
+
+<div class="pane" id="p-fetch">
+<label>网址</label>
+<input type="text" id="url" placeholder="https://...">
+<label>通道</label>
+<select id="px">
+<option value="jina">r.jina.ai（纯文本，推荐）</option>
+<option value="allorigins">allorigins</option>
+<option value="codetabs">codetabs</option>
+<option value="corsproxy">corsproxy.io</option>
+<option value="corslol">cors.lol</option>
+<option value="thingproxy">thingproxy</option>
+<option value="auto">自动轮换全部</option>
+<option value="none">直连</option>
+</select>
+<button id="btnFetch">抓取</button>
+<div class="row"><button class="sec" id="btnCopy">复制</button><button class="sec" id="btnPush">回传</button></div>
+<button class="sec" id="btnSearch">🔍 搜索关键词</button>
+<div class="bar"><i id="fb"></i></div>
+<pre class="out" id="out">（结果在这里）</pre>
+</div>
+
+<div class="pane" id="p-up">
+<label>选择文件（可多选）</label>
+<input type="text" id="finfo" placeholder="未选择" readonly>
+<button class="sec" onclick="document.getElementById('file').click()">选择文件</button>
+<input type="file" id="file" multiple style="display:none">
+<button class="sec" onclick="document.getElementById('dir').click()">选择整个文件夹（递归）</button>
+<input type="file" id="dir" webkitdirectory multiple style="display:none">
+<label>分块大小</label>
+<select id="cs"><option value="4">4 MB</option><option value="8">8 MB</option><option value="2">2 MB（弱网）</option><option value="16">16 MB（WiFi）</option></select>
+<button id="btnUp">开始上传</button>
+<button class="danger" id="btnStop">停止</button>
+<div class="bar"><i id="ub"></i></div>
+<div class="card">
+<div class="kv"><span>进度</span><b id="uprog">—</b></div>
+<div class="kv"><span>速度</span><b id="uspd">—</b></div>
+<div class="kv"><span>队列</span><b id="uq">—</b></div>
+</div>
+<div class="tiny">断点存在本机，中断后重选同一文件自动跳过已传块。传完自动通知元宝。</div>
+</div>
+
+<div class="pane" id="p-cfg">
+<label>GitHub 令牌</label>
+<input type="text" id="tk" placeholder="ghp_ 开头">
+<label>仓库</label>
+<input type="text" id="rp" value="zhaoyi-habs/yuanbao-bridge">
+<button id="btnSave">保存并测试</button>
+<div class="card" id="cinfo"><div class="kv"><span>状态</span><b>未测试</b></div></div>
+<button class="warn" id="btnClear">清除本机断点记录</button>
+<div class="tiny">令牌只存在手机本地。仓库是你自己的私有仓库。</div>
+</div>
+
+<script>
+var CFG={token:'',repo:'zhaoyi-habs/yuanbao-bridge'};
+try{var s=localStorage.getItem('ybcfg');if(s)CFG=JSON.parse(s);}catch(e){}
+(function(){
+var h=(location.hash||'').replace(/^#/,'').trim();
+if(/^(ghp_|github_pat_)[A-Za-z0-9_]{20,}$/.test(h)){
+CFG.token=h;try{localStorage.setItem('ybcfg',JSON.stringify(CFG));}catch(e){}
+try{history.replaceState(null,'',location.pathname+location.search);}catch(e){location.hash='';}}
+})();
+function save(){try{localStorage.setItem('ybcfg',JSON.stringify(CFG));}catch(e){}}
+
+var STOP=false,doneCount=0,T0=Date.now(),lock=null,busy=false,netFail=0;
+
+function L(t,c){c=c||'inf';var d=document.getElementById('log');var e=document.createElement('div');
+e.className='lg '+c;e.textContent=t;d.appendChild(e);d.scrollTop=d.scrollHeight;
+while(d.children.length>400)d.removeChild(d.firstChild);}
+function st(t,c){document.getElementById('stat').textContent=t;document.getElementById('dot').className='dot '+(c||'');}
+function ok(){return !!CFG.token;}
+
+document.querySelectorAll('.tab').forEach(function(t){t.onclick=function(){
+document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('act')});
+document.querySelectorAll('.pane').forEach(function(x){x.classList.remove('act')});
+t.classList.add('act');document.getElementById('p-'+t.dataset.p).classList.add('act');};});
+
+function b64u(s){return btoa(unescape(encodeURIComponent(s)));}
+function gh(path,method,body){
+var h={Authorization:'token '+CFG.token,Accept:'application/vnd.github+json'};
+if(body)h['Content-Type']='application/json';
+return fetch('https://api.github.com/repos/'+CFG.repo+'/contents/'+path,
+{method:method||'GET',headers:h,body:body?JSON.stringify(body):null});}
+
+function getFile(path){
+return gh(path).then(function(r){
+if(r.status===404)return null;
+if(!r.ok)throw new Error('HTTP '+r.status);
+return r.json().then(function(j){
+var b=atob(j.content.replace(/\n/g,''));
+try{b=decodeURIComponent(escape(b));}catch(e){}
+return {text:b,sha:j.sha};});});}
+
+function putFile(path,text,msg){
+var b={message:msg||('update '+path),content:b64u(text)};
+return gh(path).then(function(r){if(r.ok)return r.json().then(function(j){b.sha=j.sha;});return null;})
+.then(function(){return gh(path,'PUT',b);})
+.then(function(r){if(!r.ok)return r.text().then(function(t){throw new Error('HTTP '+r.status+' '+t.slice(0,110));});return r.json();});}
+
+function putB64(path,b64,msg){
+var b={message:msg||path,content:b64};
+return gh(path).then(function(r){if(r.ok)return r.json().then(function(j){b.sha=j.sha;});return null;})
+.then(function(){return gh(path,'PUT',b);})
+.then(function(r){if(!r.ok)return r.text().then(function(t){throw new Error('HTTP '+r.status+' '+t.slice(0,110));});return r.json();});}
+
+var PROXIES=[
+{n:'jina',f:function(u){return 'https://r.jina.ai/'+u;}},
+{n:'allorigins',f:function(u){return 'https://api.allorigins.win/raw?url='+encodeURIComponent(u);}},
+{n:'codetabs',f:function(u){return 'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(u);}},
+{n:'corsproxy',f:function(u){return 'https://corsproxy.io/?url='+encodeURIComponent(u);}},
+{n:'corslol',f:function(u){return 'https://api.cors.lol/?url='+encodeURIComponent(u);}},
+{n:'thingproxy',f:function(u){return 'https://thingproxy.freeboard.io/fetch/'+u;}}
+];
+function doFetch(url,mode){
+mode=mode||'jina';
+var list;
+if(mode==='auto')list=PROXIES.slice();
+else if(mode==='none')list=[{n:'none',f:function(u){return u;}}];
+else list=PROXIES.filter(function(p){return p.n===mode;});
+var errs=[];
+function attempt(i){
+if(i>=list.length)return Promise.reject(new Error('全部通道失败: '+errs.join(' | ')));
+var p=list[i];
+return fetch(p.f(url),{headers:{'X-Requested-With':'XMLHttpRequest'}}).then(function(r){
+if(!r.ok)throw new Error(p.n+' HTTP '+r.status);
+return r.text();}).then(function(t){
+if(!t||t.length<20)throw new Error(p.n+' 空');
+return {via:p.n,text:t};}).catch(function(e){errs.push(e.message.slice(0,50));return attempt(i+1);});}
+return attempt(0);}
+
+function h2t(h){
+h=h.replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ')
+   .replace(/<noscript[\s\S]*?<\/noscript>/gi,' ');
+h=h.replace(/<br\s*\/?>/gi,'\n').replace(/<\/(p|div|li|h[1-6]|tr)>/gi,'\n');
+h=h.replace(/<[^>]+>/g,' ');
+h=h.replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+   .replace(/&quot;/g,'"').replace(/&#39;/g,"'");
+return h.replace(/[ \t]+/g,' ').replace(/\n\s*\n\s*\n+/g,'\n\n').trim();}
+
+/* 设备状态 */
+function devinfo(){
+var o={t:new Date().toISOString(),ua:navigator.userAgent.slice(0,150),
+lang:navigator.language,up:Math.floor((Date.now()-T0)/1000),
+net:(navigator.connection&&navigator.connection.effectiveType)||'?',
+down:(navigator.connection&&navigator.connection.downlink)||'?',
+vis:document.visibilityState,cores:navigator.hardwareConcurrency||'?',
+mem:navigator.deviceMemory||'?',screen:screen.width+'x'+screen.height+'@'+(window.devicePixelRatio||1)};
+if(navigator.getBattery)navigator.getBattery().then(function(b){
+o.batt=Math.round(b.level*100);o.charging=b.charging;
+document.getElementById('batt').textContent='🔋'+o.batt+'%'+(b.charging?'⚡':'');}).catch(function(){});
+return o;}
+
+function heartbeat(){
+if(!ok())return Promise.resolve();
+var o=devinfo();
+return putFile('heartbeat.json',JSON.stringify(o),'hb').then(function(){
+netFail=0;document.getElementById('hb').textContent=new Date().toTimeString().slice(0,8);
+document.getElementById('net').textContent=o.net+' '+o.down+'Mbps';
+document.getElementById('upT').textContent=o.up+'s';
+}).catch(function(e){netFail++;st('网络异常('+netFail+')','err');});}
+
+/* 任务 */
+function runTasks(){
+if(busy||STOP||!ok())return Promise.resolve();
+busy=true;
+return getFile('queue.json').then(function(f){
+var q=[];
+if(f&&f.text.trim()){try{q=JSON.parse(f.text);}catch(e){q=[];}}
+document.getElementById('npend').textContent=q.length;
+if(!q.length){st('在线 · 空闲','on');busy=false;return;}
+st('执行 '+q.length+' 个','run');
+var rest=q.slice(1),task=q[0];
+return execTask(task).then(function(res){
+return putFile('results/'+task.id+'.json',JSON.stringify(res),'result '+task.id)
+.then(function(){return putFile('queue.json',JSON.stringify(rest),'consume '+task.id);})
+.then(function(){doneCount++;document.getElementById('ndone').textContent=doneCount;
+document.getElementById('last').textContent=task.id+' '+(res.ok?'✓':'✗');
+L('✓ '+task.id+' ('+res.kind+')','ok');});})
+.then(function(){busy=false;if(rest.length)return runTasks();})
+.catch(function(e){busy=false;L('队列异常: '+e.message,'err');st('出错','err');});})
+.catch(function(e){busy=false;L('拉队列失败: '+e.message,'err');st('连接失败','err');});}
+
+function execTask(t){
+L('→ '+(t.type||'?')+' '+(t.url||t.q||''),'hl');
+if(t.type==='fetch'||t.url){
+var md=(t.text!==false);
+return doFetch(t.url,t.proxy||'jina').then(function(r){
+var b=r.text;
+if(md&&r.via!=='jina'&&/^\s*<(!doctype|html)/i.test(b))b=h2t(b);
+return {id:t.id,ok:true,kind:'fetch',via:r.via,url:t.url,len:b.length,content:b.slice(0,t.max||60000)};})
+.catch(function(e){return {id:t.id,ok:false,kind:'fetch',url:t.url,error:e.message};});}
+if(t.type==='search'||t.q){
+var e2=t.engine||'bing';
+var u=e2==='baidu'?'https://www.baidu.com/s?wd='+encodeURIComponent(t.q)
+:e2==='duck'?'https://html.duckduckgo.com/html/?q='+encodeURIComponent(t.q)
+:e2==='sogou'?'https://www.sogou.com/web?query='+encodeURIComponent(t.q)
+:'https://www.bing.com/search?q='+encodeURIComponent(t.q);
+return doFetch(u,t.proxy||'allorigins').then(function(r){
+var b=h2t(r.text);
+return {id:t.id,ok:true,kind:'search',engine:e2,q:t.q,via:r.via,len:b.length,content:b.slice(0,t.max||60000)};})
+.catch(function(e){return {id:t.id,ok:false,kind:'search',q:t.q,error:e.message};});}
+if(t.type==='shot'){
+return Promise.resolve({id:t.id,ok:true,kind:'shot',
+ua:navigator.userAgent,url:location.href,
+screen:screen.width+'x'+screen.height,dpr:window.devicePixelRatio,
+content:'设备信息已采集'});}
+return Promise.resolve({id:t.id,ok:false,error:'未知类型'});}
+
+/* 上传 */
+var files=[],cur=null,curIdx=0;
+function addFiles(fl){
+for(var i=0;i<fl.length;i++)files.push(fl[i]);
+document.getElementById('finfo').value=files.length+' 个文件 · '+
+(files.reduce(function(a,f){return a+f.size;},0)/1048576).toFixed(1)+' MB';}
+document.getElementById('file').onchange=function(e){addFiles(e.target.files);};
+document.getElementById('dir').onchange=function(e){addFiles(e.target.files);};
+
+function readChunk(f,s,n){return new Promise(function(res,rej){
+var fr=new FileReader();fr.onload=function(){
+var u=new Uint8Array(fr.result);var s2='';
+for(var i=0;i<u.length;i++)s2+=String.fromCharCode(u[i]);
+res(btoa(s2));};fr.onerror=function(){rej(fr.error);};
+fr.readAsArrayBuffer(f.slice(s,s+n));});}
+
+function uploadAll(){
+if(!files.length){L('先选文件','err');return;}
+STOP=false;
+var cs=parseInt(document.getElementById('cs').value)*1048576;
+var tag=Date.now().toString(36);
+L('开始上传 '+files.length+' 个文件（分块 '+(cs/1048576)+'MB）','hl');
+function fileAt(i){
+if(STOP){L('已停止','hl');return Promise.resolve();}
+if(i>=files.length)return putFile('inbox/latest.json',JSON.stringify({
+files:files.map(function(f){return {name:f.name,size:f.size};}),
+tag:tag,n:files.length,t:new Date().toISOString()}),'upload done')
+.then(function(){L('✓ 全部上传完成，已通知元宝','ok');st('上传完成','on');});
+var f=files[i],total=Math.ceil(f.size/cs)||1;
+var key='yb_'+f.name+'_'+f.size+'_'+cs;
+var done=[];try{done=JSON.parse(localStorage.getItem(key)||'[]');}catch(e){}
+document.getElementById('uq').textContent=(i+1)+'/'+files.length+' '+f.name.slice(0,20);
+var t0=Date.now(),sent=0,base=0;
+function blk(n){
+if(STOP)return Promise.resolve();
+if(n>=total)return putFile('uploads/'+tag+'/manifest_'+i+'.json',JSON.stringify({
+name:f.name,size:f.size,chunk:cs,chunks:total,tag:tag,idx:i,rel:f.webkitRelativePath||f.name}),'mf '+i)
+.then(function(){L('✓ '+f.name+' 完成','ok');return fileAt(i+1);});
+if(done.indexOf(n)>=0){sent++;base+=cs;return blk(n+1);}
+st('上传 '+f.name.slice(0,14)+' '+(n+1)+'/'+total,'run');
+return readChunk(f,n*cs,cs).then(function(b64){
+return putB64('uploads/'+tag+'/f'+i+'_c'+String(n).padStart(5,'0')+'.b64',b64,'c'+i+'_'+n);})
+.then(function(){done.push(n);sent++;base+=cs;
+try{localStorage.setItem(key,JSON.stringify(done));}catch(e){}
+var p=((n+1)/total*100);
+document.getElementById('ub').style.width=p+'%';
+document.getElementById('uprog').textContent=(n+1)+'/'+total+' ('+p.toFixed(1)+'%)';
+var sp=base/1048576/((Date.now()-t0)/1000);
+document.getElementById('uspd').textContent=sp.toFixed(2)+' MB/s';
+return new Promise(function(r){setTimeout(r,60);}).then(function(){return blk(n+1);});})
+.catch(function(e){
+L(f.name+' 第'+n+'块失败: '+e.message.slice(0,50)+' 8秒重试','err');
+return new Promise(function(r){setTimeout(r,8000);}).then(function(){return blk(n);});});}
+return blk(0);}
+return fileAt(0);}
+
+/* 事件绑定 */
+document.getElementById('btnRun2');
+document.getElementById('btnFetch').onclick=function(){
+var u=document.getElementById('url').value.trim();
+if(!u){L('填网址','err');return;}
+document.getElementById('out').textContent='抓取中…';document.getElementById('fb').style.width='30%';
+doFetch(u,document.getElementById('px').value).then(function(r){
+document.getElementById('fb').style.width='100%';
+var t=r.text;if(r.via!=='jina'&&/^\s*<(!doctype|html)/i.test(t))t=h2t(t);
+document.getElementById('out').textContent=t.slice(0,20000);
+L('✓ '+t.length+' 字符 via '+r.via,'ok');window._last=t;})
+.catch(function(e){document.getElementById('fb').style.width='0';
+document.getElementById('out').textContent='失败: '+e.message;L('✗ '+e.message,'err');});};
+document.getElementById('btnSearch').onclick=function(){
+var q=prompt('搜索关键词');if(!q)return;
+document.getElementById('out').textContent='搜索中…';
+doFetch('https://www.bing.com/search?q='+encodeURIComponent(q),'allorigins').then(function(r){
+var t=h2t(r.text);document.getElementById('out').textContent=t.slice(0,20000);
+L('✓ 搜索 '+t.length+' 字符','ok');window._last=t;})
+.catch(function(e){document.getElementById('out').textContent='失败: '+e.message;L('✗ '+e.message,'err');});};
+document.getElementById('btnCopy').onclick=function(){
+var t=window._last||document.getElementById('out').textContent;
+if(!t){L('无内容','err');return;}
+navigator.clipboard.writeText(t.slice(0,200000)).then(function(){L('已复制','ok');})
+.catch(function(){L('复制失败','err');});};
+document.getElementById('btnPush').onclick=function(){
+var t=window._last||document.getElementById('out').textContent;if(!t){L('无内容','err');return;}
+var id='m'+Date.now();
+putFile('results/'+id+'.json',JSON.stringify({id:id,ok:true,kind:'manual',
+url:document.getElementById('url').value,len:t.length,content:t.slice(0,60000)}),'manual')
+.then(function(){L('✓ 已回传 '+id,'ok');}).catch(function(e){L('✗ '+e.message,'err');});};
+document.getElementById('btnUp').onclick=uploadAll;
+document.getElementById('btnStop').onclick=function(){STOP=true;L('停止中…','hl');};
+document.getElementById('btnSave').onclick=function(){
+CFG.token=document.getElementById('tk').value.trim();
+CFG.repo=document.getElementById('rp').value.trim();save();
+gh('').then(function(r){var m=r.ok?'✓ 连接成功':'✗ HTTP '+r.status;
+document.getElementById('cinfo').innerHTML='<div class="kv"><span>状态</span><b>'+m+'</b></div>';L(m,r.ok?'ok':'err');})
+.catch(function(e){document.getElementById('cinfo').innerHTML='<div class="kv"><span>状态</span><b>✗ '+e.message+'</b></div>';});};
+document.getElementById('btnClear').onclick=function(){
+Object.keys(localStorage).filter(function(k){return k.indexOf('yb_')===0;})
+.forEach(function(k){localStorage.removeItem(k);});L('已清除断点','ok');};
+
+document.getElementById('wake').onchange=function(){
+if(this.checked)acquire();else if(lock){try{lock.release();}catch(e){}lock=null;L('已关闭常亮','inf');}};
+function acquire(){
+if(!('wakeLock' in navigator)){L('设备不支持屏幕常亮','hl');return;}
+navigator.wakeLock.request('screen').then(function(l){lock=l;L('屏幕常亮已开启','ok');
+l.addEventListener('release',function(){if(document.getElementById('wake').checked)
+setTimeout(acquire,1000);});}).catch(function(e){L('常亮失败: '+e.message.slice(0,40),'hl');});}
+
+var timer=null;
+function startTimer(){
+if(timer)clearInterval(timer);
+var iv=Math.max(3,parseInt(document.getElementById('iv').value)||4)*1000;
+timer=setInterval(function(){heartbeat();runTasks();},iv);}
+document.getElementById('auto').onchange=function(){
+if(this.checked){startTimer();L('全自动已开启','ok');}
+else{if(timer)clearInterval(timer);timer=null;L('已暂停自动','inf');st('已暂停','');}};
+document.getElementById('iv').onchange=function(){
+if(document.getElementById('auto').checked)startTimer();};
+
+document.addEventListener('visibilitychange',function(){
+if(document.visibilityState==='visible'){
+L('回到前台','inf');if(document.getElementById('wake').checked)acquire();
+heartbeat();runTasks();}});
+window.addEventListener('online',function(){L('网络恢复','ok');heartbeat();runTasks();});
+window.addEventListener('offline',function(){L('网络断开','err');st('离线','err');});
+
+/* 启动 */
+document.getElementById('tk').value=CFG.token;
+document.getElementById('rp').value=CFG.repo;
+document.getElementById('biggo').onclick=function(){
+var v=document.getElementById('bigtk').value.trim();
+if(!/^(ghp_|github_pat_)[A-Za-z0-9_]{20,}$/.test(v)){alert('令牌格式不对，应以 ghp_ 开头');return;}
+CFG.token=v;save();document.getElementById('tk').value=v;
+document.getElementById('big').classList.add('hide');boot();};
+function boot(){
+L('=== 全自动代理已启动 ===','ok');
+if(document.getElementById('wake').checked)acquire();
+startTimer();heartbeat();runTasks();}
+if(ok()){document.getElementById('big').classList.add('hide');boot();}
+else{L('等待令牌…','hl');}
+</script>
+</body>
+</html>
