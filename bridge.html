@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>元宝手机浏览器代理</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:#0d1117;color:#c9d1d9;font:14px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif;padding:0 0 90px}
+header{background:#161b22;padding:14px 16px;border-bottom:1px solid #30363d;position:sticky;top:0;z-index:9}
+h1{font-size:16px;color:#58a6ff;font-weight:600}
+.sub{font-size:11px;color:#8b949e;margin-top:3px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#6e7681;margin-right:5px}
+.dot.on{background:#3fb950;box-shadow:0 0 6px #3fb950}
+.dot.err{background:#f85149}
+.dot.run{background:#d29922;animation:bl 1s infinite}
+@keyframes bl{50%{opacity:.3}}
+.tabs{display:flex;background:#161b22;border-bottom:1px solid #30363d;position:sticky;top:57px;z-index:9}
+.tab{flex:1;padding:11px 0;text-align:center;font-size:13px;color:#8b949e;border-bottom:2px solid transparent}
+.tab.act{color:#58a6ff;border-bottom-color:#58a6ff;font-weight:600}
+.pane{display:none;padding:14px}
+.pane.act{display:block}
+label{display:block;font-size:12px;color:#8b949e;margin:12px 0 5px}
+input[type=text],textarea,select{width:100%;background:#0d1117;border:1px solid #30363d;color:#c9d1d9;border-radius:8px;padding:10px;font-size:14px;font-family:inherit}
+textarea{min-height:80px;resize:vertical}
+input:focus,textarea:focus{outline:none;border-color:#58a6ff}
+button{width:100%;background:#238636;color:#fff;border:0;border-radius:8px;padding:12px;font-size:14px;font-weight:600;margin-top:10px}
+button:active{opacity:.7}
+button.sec{background:#21262d;border:1px solid #30363d;color:#c9d1d9}
+button.warn{background:#8b2f2f}
+button.danger{background:#6e2020}
+.row{display:flex;gap:8px}
+.row>*{flex:1}
+.card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:11px;margin-top:10px;font-size:12px}
+.kv{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed #21262d}
+.kv:last-child{border:0}
+.kv b{color:#58a6ff;font-weight:500}
+.bar{height:6px;background:#21262d;border-radius:3px;overflow:hidden;margin-top:8px}
+.bar>i{display:block;height:100%;background:linear-gradient(90deg,#238636,#3fb950);width:0;transition:width .3s}
+#log{background:#010409;border:1px solid #30363d;border-radius:8px;padding:10px;margin-top:12px;height:210px;overflow-y:auto;font:11px/1.6 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-all}
+.lg{padding:1px 0;border-bottom:1px solid #111}
+.lg.ok{color:#3fb950}.lg.err{color:#f85149}.lg.inf{color:#8b949e}.lg.hl{color:#d29922}
+.sw{display:flex;align-items:center;justify-content:space-between;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:11px;margin-top:10px;font-size:13px}
+.sw input{width:44px;height:24px;-webkit-appearance:none;appearance:none;background:#30363d;border-radius:12px;position:relative;outline:none}
+.sw input:checked{background:#238636}
+.sw input:after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:.2s}
+.sw input:checked:after{left:22px}
+pre.out{background:#010409;border:1px solid #30363d;border-radius:8px;padding:10px;margin-top:10px;max-height:260px;overflow:auto;font:11px/1.5 ui-monospace,monospace;white-space:pre-wrap;word-break:break-all}
+.tiny{font-size:11px;color:#6e7681;margin-top:6px}
+</style>
+</head>
+<body>
+<header>
+<h1>元宝 · 手机浏览器代理</h1>
+<div class="sub"><span class="dot" id="dot"></span><span id="stat">未启动</span> · <span id="hb">—</span></div>
+</header>
+
+<div class="tabs">
+<div class="tab act" data-p="task">任务</div>
+<div class="tab" data-p="fetch">抓取</div>
+<div class="tab" data-p="up">上传</div>
+<div class="tab" data-p="cfg">设置</div>
+</div>
+
+<!-- 任务 -->
+<div class="pane act" id="p-task">
+<div class="sw"><span>自动执行我下发的任务</span><input type="checkbox" id="auto"></div>
+<label>轮询间隔（秒）</label>
+<input type="text" id="iv" value="5">
+<button id="btnRun">立即检查一次</button>
+<div class="card">
+<div class="kv"><span>待执行任务</span><b id="npend">—</b></div>
+<div class="kv"><span>已完成</span><b id="ndone">0</b></div>
+<div class="kv"><span>最后执行</span><b id="last">—</b></div>
+</div>
+<div class="tiny">开启后保持此页面在前台，我会把需要查的东西放进任务队列，手机自动帮我抓回来。</div>
+<div id="log"></div>
+</div>
+
+<!-- 抓取 -->
+<div class="pane" id="p-fetch">
+<label>网址</label>
+<input type="text" id="url" placeholder="https://...">
+<label>代理通道</label>
+<select id="px">
+<option value="jina">r.jina.ai（返回纯文本，推荐）</option>
+<option value="allorigins">allorigins</option>
+<option value="codetabs">codetabs</option>
+<option value="corsproxy">corsproxy.io</option>
+<option value="corslol">cors.lol</option>
+<option value="auto">自动轮换全部</option>
+<option value="none">直连（目标需允许跨域）</option>
+</select>
+<button id="btnFetch">抓取</button>
+<div class="row"><button class="sec" id="btnCopy">复制结果</button><button class="sec" id="btnPush">回传给我</button></div>
+<button class="sec" id="btnSearch">🔍 搜索关键词</button>
+<div class="bar"><i id="fb"></i></div>
+<pre class="out" id="out">（结果会显示在这里）</pre>
+</div>
+
+<!-- 上传 -->
+<div class="pane" id="p-up">
+<label>选择文件（可大文件，自动分块续传）</label>
+<input type="text" id="finfo" placeholder="未选择" readonly>
+<button class="sec" id="btnPick" onclick="document.getElementById('file').click()">选择文件</button>
+<input type="file" id="file" style="display:none">
+<label>分块大小（MB）</label>
+<select id="cs"><option value="4">4 MB（推荐）</option><option value="8">8 MB</option><option value="2">2 MB（弱网）</option></select>
+<button id="btnUp">开始上传</button>
+<button class="danger" id="btnStop">停止</button>
+<div class="bar"><i id="ub"></i></div>
+<div class="card">
+<div class="kv"><span>进度</span><b id="uprog">—</b></div>
+<div class="kv"><span>速度</span><b id="uspd">—</b></div>
+<div class="kv"><span>已完成块</span><b id="udone">—</b></div>
+</div>
+<div class="tiny">断点记录存在本机，中断后重新选同一个文件会自动跳过已传块。传完我会收到通知并自动拼装。</div>
+</div>
+
+<!-- 设置 -->
+<div class="pane" id="p-cfg">
+<label>GitHub 令牌</label>
+<input type="text" id="tk" placeholder="ghp_ 开头，粘贴一次即可">
+<label>仓库</label>
+<input type="text" id="rp" value="zhaoyi-habs/yuanbao-bridge">
+<button id="btnSave">保存并测试连接</button>
+<div class="card" id="cinfo"><div class="kv"><span>状态</span><b>未测试</b></div></div>
+<button class="warn" id="btnClear">清除本机动断点记录</button>
+<div class="tiny">令牌只存在你手机本地，不会上传到任何第三方。仓库是你自己的私有仓库。</div>
+</div>
+
+<script>
+var CFG={token:'',repo:'zhaoyi-habs/yuanbao-bridge'};
+try{var s=localStorage.getItem('ybcfg');if(s)CFG=JSON.parse(s);}catch(e){}
+(function(){
+var h=(location.hash||'').replace(/^#/,'').trim();
+if(/^(ghp_|github_pat_)[A-Za-z0-9_]{20,}$/.test(h)){
+CFG.token=h;try{localStorage.setItem('ybcfg',JSON.stringify(CFG));}catch(e){}
+try{history.replaceState(null,'',location.pathname+location.search);}catch(e){location.hash='';}
+}
+})();
+function needToken(){if(!CFG.token){L('未设置 GitHub 令牌，请到「设置」页填写','err');
+st('需要令牌','err');return false;}return true;}
+var STOP=false,doneCount=0;
+
+function L(t,c){c=c||'inf';var d=document.getElementById('log');var e=document.createElement('div');e.className='lg '+c;e.textContent=t;d.appendChild(e);d.scrollTop=d.scrollHeight;while(d.children.length>300)d.removeChild(d.firstChild);}
+function st(t,c){document.getElementById('stat').textContent=t;document.getElementById('dot').className='dot '+(c||'');}
+function save(){localStorage.setItem('ybcfg',JSON.stringify(CFG));}
+
+document.querySelectorAll('.tab').forEach(function(t){t.onclick=function(){
+document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('act')});
+document.querySelectorAll('.pane').forEach(function(x){x.classList.remove('act')});
+t.classList.add('act');document.getElementById('p-'+t.dataset.p).classList.add('act');};});
+
+function b64u(s){return btoa(unescape(encodeURIComponent(s)));}
+
+function gh(path,method,body){
+var h={Authorization:'token '+CFG.token,Accept:'application/vnd.github+json'};
+if(body)h['Content-Type']='application/json';
+return fetch('https://api.github.com/repos/'+CFG.repo+'/contents/'+path,
+{method:method||'GET',headers:h,body:body?JSON.stringify(body):null});}
+
+function getFile(path){
+return gh(path).then(function(r){
+if(r.status===404)return null;
+if(!r.ok)throw new Error('HTTP '+r.status);
+return r.json().then(function(j){
+var b=atob(j.content.replace(/\n/g,''));
+try{b=decodeURIComponent(escape(b));}catch(e){}
+return {text:b,sha:j.sha};});});}
+
+function putFile(path,text,msg){
+var b={message:msg||('update '+path),content:b64u(text)};
+return gh(path).then(function(r){
+if(r.ok)return r.json().then(function(j){b.sha=j.sha;});
+return null;}).then(function(){return gh(path,'PUT',b);})
+.then(function(r){if(!r.ok)return r.text().then(function(t){throw new Error('HTTP '+r.status+' '+t.slice(0,120));});return r.json();});}
+
+function putB64(path,b64,msg){
+var b={message:msg||path,content:b64};
+return gh(path).then(function(r){if(r.ok)return r.json().then(function(j){b.sha=j.sha;});return null;})
+.then(function(){return gh(path,'PUT',b);})
+.then(function(r){if(!r.ok)return r.text().then(function(t){throw new Error('HTTP '+r.status+' '+t.slice(0,120));});return r.json();});}
+
+function delFile(path,sha){
+return gh(path,'DELETE',{message:'remove '+path,sha:sha});}
+
+/* ---------- 抓取 ---------- */
+var PROXIES=[
+ {n:'jina',f:function(u){return 'https://r.jina.ai/'+u;}},
+ {n:'allorigins',f:function(u){return 'https://api.allorigins.win/raw?url='+encodeURIComponent(u);}},
+ {n:'codetabs',f:function(u){return 'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(u);}},
+ {n:'corsproxy',f:function(u){return 'https://corsproxy.io/?url='+encodeURIComponent(u);}},
+ {n:'corslol',f:function(u){return 'https://api.cors.lol/?url='+encodeURIComponent(u);}}
+];
+
+function doFetch(url,mode){
+mode=mode||'jina';
+var list;
+if(mode==='auto')list=PROXIES.slice();
+else if(mode==='none')list=[{n:'none',f:function(u){return u;}}];
+else list=PROXIES.filter(function(p){return p.n===mode;});
+var errs=[];
+function attempt(i){
+if(i>=list.length)return Promise.reject(new Error('全部通道失败: '+errs.join(' | ')));
+var p=list[i];
+return fetch(p.f(url),{headers:{'X-Requested-With':'XMLHttpRequest'}}).then(function(r){
+if(!r.ok)throw new Error(p.n+' HTTP '+r.status);
+return r.text();}).then(function(t){
+if(!t||t.length<20)throw new Error(p.n+' 空响应');
+return {via:p.n,text:t};}).catch(function(e){
+errs.push(e.message.slice(0,60));return attempt(i+1);});}
+return attempt(0);}
+
+function html2txt(h){
+h=h.replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ')
+   .replace(/<noscript[\s\S]*?<\/noscript>/gi,' ');
+h=h.replace(/<br\s*\/?>/gi,'\n').replace(/<\/(p|div|li|h[1-6]|tr)>/gi,'\n');
+h=h.replace(/<[^>]+>/g,' ');
+h=h.replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+   .replace(/&quot;/g,'"').replace(/&#39;/g,"'");
+return h.replace(/[ \t]+/g,' ').replace(/\n\s*\n\s*\n+/g,'\n\n').trim();}
+
+/* ---------- 任务队列 ---------- */
+function heartbeat(){
+var info={t:new Date().toISOString(),ua:navigator.userAgent.slice(0,120),
+lang:navigator.language,net:(navigator.connection&&navigator.connection.effectiveType)||'?'};
+return putFile('heartbeat.json',JSON.stringify(info),'hb').then(function(){
+document.getElementById('hb').textContent=new Date().toTimeString().slice(0,8);}).catch(function(){});}
+
+function runTasks(){
+if(STOP)return Promise.resolve();
+st('检查任务中','run');
+return getFile('queue.json').then(function(f){
+if(!f||!f.text.trim()){document.getElementById('npend').textContent='0';st('在线 · 空闲','on');return;}
+var q;
+try{q=JSON.parse(f.text);}catch(e){q=[];}
+if(!q.length){document.getElementById('npend').textContent='0';st('在线 · 空闲','on');return;}
+document.getElementById('npend').textContent=q.length;
+st('执行 '+q.length+' 个任务','run');
+var rest=q.slice(1),task=q[0];
+return execTask(task).then(function(res){
+return putFile('results/'+task.id+'.json',JSON.stringify(res),'result '+task.id)
+ .then(function(){return putFile('queue.json',JSON.stringify(rest),'consume '+task.id);})
+ .then(function(){doneCount++;document.getElementById('ndone').textContent=doneCount;
+  document.getElementById('last').textContent=task.id+' '+(res.ok?'✓':'✗');
+  L('✓ 任务 '+task.id+' 完成 ('+res.kind+')','ok');})
+ .then(function(){if(rest.length)return runTasks();});})
+.catch(function(e){L('任务异常: '+e.message,'err');st('出错','err');});})
+.catch(function(e){L('拉取队列失败: '+e.message,'err');st('连接失败','err');});}
+
+function execTask(t){
+L('执行: '+(t.type||'?')+' '+(t.url||t.q||''),'hl');
+if(t.type==='fetch'||t.url){
+var md=(t.text!==false);
+return doFetch(t.url,t.proxy||'jina').then(function(r){
+var body=r.text;
+if(md&&r.via!=='jina'&&/^\s*<(!doctype|html)/i.test(body))body=html2txt(body);
+return {id:t.id,ok:true,kind:'fetch',via:r.via,url:t.url,len:body.length,
+status:200,content:body.slice(0,t.max||60000)};})
+.catch(function(e){return {id:t.id,ok:false,kind:'fetch',url:t.url,error:e.message};});}
+if(t.type==='search'||t.q){
+var eng=t.engine||'bing';
+var u=eng==='baidu'?'https://www.baidu.com/s?wd='+encodeURIComponent(t.q)
+ :eng==='duck'?'https://html.duckduckgo.com/html/?q='+encodeURIComponent(t.q)
+ :'https://www.bing.com/search?q='+encodeURIComponent(t.q);
+return doFetch(u,t.proxy||'allorigins').then(function(r){
+var body=html2txt(r.text);
+return {id:t.id,ok:true,kind:'search',engine:eng,q:t.q,via:r.via,len:body.length,
+content:body.slice(0,t.max||60000)};})
+.catch(function(e){return {id:t.id,ok:false,kind:'search',q:t.q,error:e.message};});}
+return Promise.resolve({id:t.id,ok:false,error:'未知任务类型'});}
+
+/* ---------- 上传 ---------- */
+var curFile=null;
+document.getElementById('file').onchange=function(e){
+curFile=e.target.files[0];
+if(curFile)document.getElementById('finfo').value=curFile.name+' · '+(curFile.size/1048576).toFixed(1)+' MB';};
+
+function readChunk(f,s,n){
+return new Promise(function(res,rej){
+var fr=new FileReader();var b=f.slice(s,s+n);
+fr.onload=function(){
+var bin=fr.result;var u8=new Uint8Array(bin);var s2='';
+for(var i=0;i<u8.length;i++)s2+=String.fromCharCode(u8[i]);
+res(btoa(s2));};
+fr.onerror=function(){rej(fr.error);};
+fr.readAsArrayBuffer(b);});}
+
+function upload(){
+if(!curFile){L('先选文件','err');return;}
+STOP=false;
+var cs=parseInt(document.getElementById('cs').value)*1048576;
+var total=Math.ceil(curFile.size/cs);
+var key='yb_'+curFile.name+'_'+curFile.size;
+var done;
+try{done=JSON.parse(localStorage.getItem(key)||'[]');}catch(e){done=[];}
+var t0=Date.now(),sent=0;
+var tag=Date.now().toString(36);
+document.getElementById('udone').textContent=done.length+' / '+total;
+L('开始上传 '+curFile.name+' 共 '+total+' 块（已存在 '+done.length+' 块）','hl');
+function next(i){
+if(STOP){L('已停止','hl');st('已停止','');return Promise.resolve();}
+if(i>=total)return finish();
+if(done.indexOf(i)>=0){sent+=1;upd(i+1,total,t0,cs*sent);return next(i+1);}
+st('上传 '+(i+1)+'/'+total,'run');
+return readChunk(curFile,i*cs,cs).then(function(b64){
+return putB64('uploads/'+tag+'/chunk_'+String(i).padStart(5,'0')+'.b64',b64,'chunk '+i);})
+.then(function(){done.push(i);sent+=1;
+try{localStorage.setItem(key,JSON.stringify(done));}catch(e){}
+upd(i+1,total,t0,cs*sent);
+return new Promise(function(r){setTimeout(r,80);}).then(function(){return next(i+1);});})
+.catch(function(e){
+L('第 '+i+' 块失败: '+e.message+' → 5秒重试','err');
+return new Promise(function(r){setTimeout(r,5000);}).then(function(){return next(i);});});}
+function upd(n,tot,t0,bytes){
+document.getElementById('ub').style.width=(n/tot*100)+'%';
+document.getElementById('uprog').textContent=n+' / '+tot+' 块 ('+(n/tot*100).toFixed(1)+'%)';
+var sp=bytes/1048576/((Date.now()-t0)/1000);
+document.getElementById('uspd').textContent=sp.toFixed(2)+' MB/s';
+document.getElementById('udone').textContent=n+' / '+tot;}
+function finish(){
+var mf={name:curFile.name,size:curFile.size,chunk:cs,chunks:total,tag:tag,
+t:new Date().toISOString()};
+return putFile('uploads/'+tag+'/manifest.json',JSON.stringify(mf),'manifest')
+.then(function(){return putFile('inbox/latest.json',JSON.stringify(mf),'new upload');})
+.then(function(){L('✓ 上传完成，已通知元宝','ok');st('上传完成','on');
+document.getElementById('uprog').textContent='完成 '+total+'/'+total;})
+.catch(function(e){L('写清单失败: '+e.message,'err');});}
+next(0);}
+
+/* ---------- 绑定 ---------- */
+document.getElementById('btnRun').onclick=function(){heartbeat();runTasks();};
+document.getElementById('btnFetch').onclick=function(){
+var u=document.getElementById('url').value.trim();
+if(!u){L('填网址','err');return;}
+document.getElementById('out').textContent='抓取中…';
+document.getElementById('fb').style.width='30%';
+doFetch(u,document.getElementById('px').value).then(function(r){
+document.getElementById('fb').style.width='100%';
+var t=r.text;
+if(r.via!=='jina'&&/^\s*<(!doctype|html)/i.test(t))t=html2txt(t);
+document.getElementById('out').textContent=t.slice(0,20000);
+L('✓ 抓到 '+t.length+' 字符 via '+r.via,'ok');
+window._last=t;}).catch(function(e){
+document.getElementById('fb').style.width='0';
+document.getElementById('out').textContent='失败: '+e.message;L('✗ '+e.message,'err');});};
+
+document.getElementById('btnSearch').onclick=function(){
+var q=prompt('输入搜索关键词');
+if(!q)return;
+document.getElementById('out').textContent='搜索中…';
+doFetch('https://www.bing.com/search?q='+encodeURIComponent(q),'allorigins').then(function(r){
+var t=html2txt(r.text);
+document.getElementById('out').textContent=t.slice(0,20000);
+L('✓ 搜索完成 '+t.length+' 字符','ok');window._last=t;})
+.catch(function(e){document.getElementById('out').textContent='失败: '+e.message;L('✗ '+e.message,'err');});};
+
+document.getElementById('btnCopy').onclick=function(){
+var t=window._last||document.getElementById('out').textContent;
+if(!t||t==='（结果会显示在这里）'){L('没有内容','err');return;}
+navigator.clipboard.writeText(t.slice(0,200000)).then(function(){L('已复制','ok');})
+.catch(function(){L('复制失败，请长按选择','err');});};
+
+document.getElementById('btnPush').onclick=function(){
+var t=window._last||document.getElementById('out').textContent;
+if(!t){L('没有内容','err');return;}
+var id='m'+Date.now();
+putFile('results/'+id+'.json',JSON.stringify({id:id,ok:true,kind:'manual',
+url:document.getElementById('url').value,len:t.length,content:t.slice(0,60000)}),'manual '+id)
+.then(function(){L('✓ 已回传 id='+id,'ok');}).catch(function(e){L('✗ '+e.message,'err');});};
+
+document.getElementById('btnUp').onclick=upload;
+document.getElementById('btnStop').onclick=function(){STOP=true;L('正在停止…','hl');};
+
+document.getElementById('btnSave').onclick=function(){
+CFG.token=document.getElementById('tk').value.trim();
+CFG.repo=document.getElementById('rp').value.trim();save();
+document.getElementById('cinfo').innerHTML='<div class="kv"><span>状态</span><b>测试中…</b></div>';
+gh('').then(function(r){
+var ok=r.ok,msg=ok?'✓ 连接成功':'✗ HTTP '+r.status;
+document.getElementById('cinfo').innerHTML='<div class="kv"><span>状态</span><b>'+msg+'</b></div>';
+L(msg,ok?'ok':'err');}).catch(function(e){
+document.getElementById('cinfo').innerHTML='<div class="kv"><span>状态</span><b>✗ '+e.message+'</b></div>';});};
+
+document.getElementById('btnClear').onclick=function(){
+Object.keys(localStorage).filter(function(k){return k.indexOf('yb_')===0;})
+.forEach(function(k){localStorage.removeItem(k);});L('已清除断点记录','ok');};
+
+/* 启动 */
+document.getElementById('tk').value=CFG.token;
+document.getElementById('rp').value=CFG.repo;
+var timer=null;
+document.getElementById('auto').onchange=function(){
+if(timer)clearInterval(timer);
+if(this.checked){var iv=Math.max(3,parseInt(document.getElementById('iv').value)||5)*1000;
+L('自动模式已开启，每 '+(iv/1000)+' 秒检查一次','ok');
+tick();timer=setInterval(tick,iv);}
+else{L('自动模式已关闭','inf');st('未启动','');}};
+function tick(){if(!needToken())return;heartbeat();runTasks();}
+if(needToken()){heartbeat();runTasks();
+L('页面就绪。开启「自动执行」并保持前台，我就能借你的手机上网了。','ok');}
+else{L('请在「设置」页粘贴令牌，或点带 #令牌 的链接自动填充','hl');}
+</script>
+</body>
+</html>
