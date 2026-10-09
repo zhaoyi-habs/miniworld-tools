@@ -1,0 +1,13 @@
+元宝代理 APK 下载
+
+方式1（推荐，手机浏览器直接打开）：
+https://zhaoyi-habs.github.io/miniworld-tools/YuanbaoBridge.apk
+
+方式2（Release 页）：
+https://github.com/zhaoyi-habs/miniworld-tools/releases/download/mnw-v1/YuanbaoBridge.apk
+
+大小：28.4 KB
+签名：CN=Yuanbao（与元宝上传器同证书，可覆盖安装）
+要求：Android 5.0+
+
+安装后打开，点设置页填令牌即可全自动运行。
